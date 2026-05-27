@@ -32,7 +32,8 @@ def generate_index():
     # Quick lookup keywords
     keyword_map = {}
     keyword_map.update({
-        "resume": "Resume System", "cv": "Resume System", "cover letter": "Resume System",
+        "resume": "Documents & Writing", "cv": "Documents & Writing", "cover letter": "Documents & Writing",
+        "document": "Documents & Writing", "pdf": "Documents & Writing", "writing": "Documents & Writing",
         "website": "Personal Website", "portfolio": "Personal Website", "blog": "Personal Website",
         "memory wiki": "Memory Wiki", "wiki": "Memory Wiki",
         "youtube": "YouTube & Video", "video": "YouTube & Video", "shorts": "YouTube & Video",

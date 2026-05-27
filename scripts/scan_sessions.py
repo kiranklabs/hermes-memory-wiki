@@ -49,11 +49,11 @@ PROJECTS = [
                      "vercel", "framer motion", "shadcn", "blog"],
     },
     {
-        "name": "Resume System",
+        "name": "Documents & Writing",
         "emoji": "📄",
-        "description": "Building the resume generator and cover letter system",
-        "keywords": ["resume", "cover letter", "cv template", "resume system",
-                     "resume template", "cv generator"],
+        "description": "Creating, editing, and managing documents, PDFs, and written content",
+        "keywords": ["resume", "cover letter", "cv", "document", "pdf", "writing",
+                     "template", "generator", "nano-pdf", "ocr"],
     },
     {
         "name": "Career Research",

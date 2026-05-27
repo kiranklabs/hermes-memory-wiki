@@ -101,13 +101,13 @@ The wiki-context skill runs silently at the start of every new session:
 - If no match, stays silent — zero token overhead
 
 **Example:**
-> **You:** "Let's work on my resume again"
+> **You:** "Let's pick up where we left off on the API project"
 >
 > **Hermes (automatically):**
 > ```
-> 📚 Previous Work: Resume System
-> Built a resume generator with a modern CV template.
-> Generator: scripts/generate_v5.py. Last worked: 2026-05-24.
+> 📚 Previous Work: Backend API
+> Built a REST API with authentication and rate limiting.
+> Set up the database schema and deployed to production. Last worked: 2026-05-24.
 > ```
 > Now, what would you like to update?
 
@@ -224,17 +224,26 @@ If you've had a long, productive session and want it in the wiki immediately:
 memory-wiki rescan
 ```
 
-### Back Up Before Major Changes
-Before making significant changes to your Hermes setup or migrating to a new machine:
+### Backup & Restore
+
+**Backups** are created daily at 2:00 AM and stored in `~/memory-wiki-backups/` as timestamped tarballs (e.g., `memory-wiki-backup_20260526_180854.tar.gz`). Each backup is ~10-15MB. Only the last 10 backups are kept.
+
+A backup includes:
+- All session data (transcripts, summaries, project classifications)
+- Hermes `state.db` (the source of conversation history)
+- Launch agent and skill configurations
+- Wiki app source code and configs
+
+**To restore** on the same or a new machine:
 ```bash
-memory-wiki backup
+memory-wiki restore memory-wiki-backup_20260526_180854.tar.gz
 ```
 
-### Restore on a New Machine
-On a new machine with Hermes installed:
+The restore script handles everything: installs dependencies, restores data, merges conversation history into the existing `state.db`, reinstalls the launch agent and skill.
+
+Run a manual backup anytime:
 ```bash
-# Copy your backup file over, then:
-memory-wiki restore memory-wiki-backup_20260526_214352.tar.gz
+memory-wiki backup
 ```
 
 ### Customize Project Classification

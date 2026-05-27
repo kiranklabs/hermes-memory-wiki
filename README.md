@@ -1,9 +1,10 @@
 # 🧠 Hermes Memory Wiki
 
-> A browsable, searchable memory layer for Hermes AI agent conversations — automatically captured, summarized, and injected as context into every new session.
+> A browsable, searchable memory layer for Hermes AI agent conversations — automatically captured, summarized with multi-pass dialectic reasoning, and injected as context into every new session.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Hermes Agent](https://img.shields.io/badge/Built%20for-Hermes%20Agent-green.svg)](https://hermes-agent.nousresearch.com)
+[![Version](https://img.shields.io/badge/version-2.0-blue.svg)](CHANGELOG.md)
 
 ## What is it?
 
@@ -12,8 +13,22 @@ Hermes Memory Wiki solves a fundamental problem with AI agents: **every new sess
 It's three things working together:
 
 1. **📖 A web wiki** — Browse all past sessions, search conversations, explore projects, and read full transcripts at `http://localhost:9876`
-2. **🧠 A context skill** — Automatically loads relevant previous work into every new Hermes session so nothing gets duplicated
-3. **⚡ An auto-scan pipeline** — Runs every hour to capture new sessions, generate narrative summaries, classify into projects, and update the wiki
+2. **🧠 A context skill with dialectic reasoning** — Automatically loads rich, relevant previous work into every new Hermes session using multi-pass LLM reasoning to capture not just *what* happened but *why* it matters
+3. **⚡ An auto-scan pipeline** — Runs every hour to capture new sessions, generate dialectic summaries, classify into projects, and update the wiki
+
+## v2.0 — What's New
+
+The biggest upgrade in v2.0 is **multi-pass dialectic reasoning** for session summaries.
+
+Instead of simple keyword extraction, each session is now analyzed through 3 LLM-powered reasoning passes:
+
+| Pass | What it does |
+|------|-------------|
+| **Extract** | Identifies what was asked, done, decided, and accomplished |
+| **Reason** | Analyzes patterns and preferences across previous sessions in the same project |
+| **Synthesize** | Produces a rich context summary optimized for AI assistant injection |
+
+This means when you start a new session saying "let's work on my API project," the injected context captures *preferences* (e.g., "user prefers JWT auth with refresh tokens"), *decisions* (e.g., "using PostgreSQL with migrations"), and *where things left off* (e.g., "next step is adding rate limiting middleware") — not just a flat summary.
 
 ```
 Hermes conversations
@@ -23,7 +38,8 @@ Hermes conversations
 ┌──────────────────────┐
 │  Memory Wiki Auto-Scan│  Hermes cron job
 │  • Detects new sessions│
-│  • Generates summaries │
+│  • 3-pass dialectic    │
+│    reasoning (LLM)     │
 │  • Classifies projects │
 └──────────┬───────────┘
            │
@@ -33,15 +49,15 @@ Hermes conversations
 │   (localhost:9876)   │     │  (auto-loads per      │
 │                      │     │   session)            │
 │  • Browse sessions   │     │                       │
-│  • Search everything │     │  • Reads wiki-index   │
-│  • Project grouping  │     │  • Matches your msg   │
-│  • Daily timeline    │     │  • Injects relevant   │
-│  • Full transcripts  │     │    context (~100w)    │
-└─────────────────────┘     └──────────────────────┘
-           ▲                          ▲
-           │                          │
+│  • Search everything │     │  • Reads dialectic    │
+│  • Project grouping  │     │    context from index │
+│  • Daily timeline    │     │  • Matches your msg   │
+│  • Full transcripts  │     │  • Injects rich       │
+└─────────────────────┘     │    context (~150w)    │
+           ▲                └──────────────────────┘
+           │                          ▲
       You browse                  Every new session
-      manually                    gets relevant context
+      manually                    gets dialectic context
                                   automatically
 ```
 

@@ -50,7 +50,7 @@ Hermes conversations
 ### One-Line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/kiranklabs/hermes-memory-wiki/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kiranklabs/hermes-memory-wiki/main/scripts/install.sh | bash
 ```
 
 ### Manual Install

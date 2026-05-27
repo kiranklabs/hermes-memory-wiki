@@ -1,6 +1,6 @@
 #!/bin/bash
 # install.sh — One-click installer for hermes-memory-wiki
-# Usage: curl -fsSL https://raw.githubusercontent.com/kiranklabs/hermes-memory-wiki/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/kiranklabs/hermes-memory-wiki/main/scripts/install.sh | bash
 # Or:    git clone https://github.com/kiranklabs/hermes-memory-wiki.git && cd hermes-memory-wiki && bash scripts/install.sh
 
 set -euo pipefail

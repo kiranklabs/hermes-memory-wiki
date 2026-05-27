@@ -1,7 +1,7 @@
 #!/bin/bash
 # install.sh — One-click installer for hermes-memory-wiki
-# Usage: curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/hermes-memory-wiki/main/install.sh | bash
-# Or:    git clone https://github.com/YOUR_USERNAME/hermes-memory-wiki.git && cd hermes-memory-wiki && bash scripts/install.sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/kiranklabs/hermes-memory-wiki/main/install.sh | bash
+# Or:    git clone https://github.com/kiranklabs/hermes-memory-wiki.git && cd hermes-memory-wiki && bash scripts/install.sh
 
 set -euo pipefail
 
@@ -93,7 +93,7 @@ else
         cp -r "$SCRIPT_DIR" "$HERMES_MEMORY_WIKI_DIR"
     else
         read -rp "Enter the Git repo URL (or press Enter for default): " REPO_URL
-        REPO_URL="${REPO_URL:-https://github.com/YOUR_USERNAME/hermes-memory-wiki.git}"
+        REPO_URL="${REPO_URL:-https://github.com/kiranklabs/hermes-memory-wiki.git}"
         git clone "$REPO_URL" "$HERMES_MEMORY_WIKI_DIR"
     fi
 fi

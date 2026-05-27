@@ -50,14 +50,14 @@ Hermes conversations
 ### One-Line Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/hermes-memory-wiki/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/kiranklabs/hermes-memory-wiki/main/install.sh | bash
 ```
 
 ### Manual Install
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/hermes-memory-wiki.git
+git clone https://github.com/kiranklabs/hermes-memory-wiki.git
 cd hermes-memory-wiki
 
 # Run the installer

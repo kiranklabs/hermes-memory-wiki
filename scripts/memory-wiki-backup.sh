@@ -16,7 +16,7 @@ if [[ "${1:-}" == "--auto" ]]; then AUTO_MODE=true; fi
 WIKI_DIR="${WIKI_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 STATE_DB="${HERMES_STATE_DB:-$HOME/.hermes/state.db}"
 SKILL_DIR="${HERMES_SKILLS_DIR:-$HOME/.hermes/skills}/wiki-context"
-LAUNCH_AGENT="/Users/kiran/Library/LaunchAgents/com.memory-wiki.plist"
+LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.memory-wiki.plist"
 MEMORY_WIKI_CLI="$(dirname "$0")/memory-wiki"
 TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
 BACKUP_FILE="$BACKUP_DIR/memory-wiki-backup_$TIMESTAMP.tar.gz"
@@ -72,7 +72,7 @@ cat > "$STAGING/BACKUPINFO.json" << EOF
     "hostname": "$(hostname)",
     "user": "$(whoami)",
     "wiki_dir": "$WIKI_DIR",
-    "hermes_home": "/Users/kiran/.hermes",
+    "hermes_home": "$HOME/.hermes",
     "sessions_backed_up": $(sqlite3 "$STATE_DB" "SELECT COUNT(*) FROM sessions;" 2>/dev/null || echo "0"),
     "port": 9876
 }

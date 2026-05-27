@@ -24,3 +24,6 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+# Private sync tool (not for public repo)
+scripts/sync-public.sh

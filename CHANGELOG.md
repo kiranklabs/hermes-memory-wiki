@@ -1,6 +1,17 @@
 # Changelog
 
-## v2.0 — Multi-Pass Dialectic Reasoning
+## v2.1 - Scanner Data Quality Fix
+
+### Fixes
+
+- **Session ballooning prevented**: Scanner now filters out cron sessions (automated noise), sessions with fewer than 3 messages (not meaningful), and scanner self-sessions (dialectic pass outputs being treated as conversations)
+- **Memory Wiki project keywords tightened**: Overly broad keywords like "session scanner", "session data", "browsable record" were causing nearly all sessions to be classified as "Memory Wiki". Now uses specific keywords: "memory-wiki", "scan_sessions", "memory wiki site", "memory wiki server", "memory wiki ecosystem"
+- **Real-world impact**: Prevents the wiki from accumulating 400+ phantom sessions (was 414, now filtered to ~28 meaningful sessions)
+- **Added `memory-wiki upgrade` command**: Users can pull the latest scanner and scripts from GitHub without re-running the full installer
+
+---
+
+## v2.0 - Multi-Pass Dialectic Reasoning
 
 ### New Features
 

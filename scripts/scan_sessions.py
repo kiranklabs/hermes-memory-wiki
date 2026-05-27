@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """
-scan_sessions.py — Extracts session data from Hermes state.db
+scan_sessions.py - Extracts session data from Hermes state.db
 and generates JSON files for the Memory Wiki.
 
+Version: 2.1
+Changelog:
+  2.1 - Skip cron sessions, short sessions (< 3 msgs), scanner self-sessions
+      - Tightened Memory Wiki project keywords to prevent over-classification
+  2.0 - Multi-pass dialectic reasoning (Extract -> Reason -> Synthesize)
+  1.0 - Initial release with heuristic narrative summaries
+"""
 Outputs:
-  data/sessions.json      — all sessions with metadata
-  data/projects.json     — sessions grouped into projects/work-areas
-  data/daily_logs.json    — sessions grouped by day
-  data/sessions/*.json    — full message content per session
+  data/sessions.json      - all sessions with metadata
+  data/projects.json     - sessions grouped into projects/work-areas
+  data/daily_logs.json    - sessions grouped by day
+  data/sessions/*.json    - full message content per session
 
 Usage:
   python3 scan_sessions.py              # scan only
@@ -31,7 +38,7 @@ SESSIONS_DIR = OUT_DIR / "sessions"
 
 # ── Project classification ──────────────────────────────────────────────
 # Each project has a name, description, and keyword triggers that indicate
-# a session belongs to it. Order matters — first match wins.
+# a session belongs to it. Order matters - first match wins.
 PROJECTS = [
     {
         "name": "Memory Wiki",
@@ -114,7 +121,7 @@ PROJECTS = [
         "name": "Greetings & Casual",
         "emoji": "👋",
         "description": "Quick greetings, check-ins, and casual conversations",
-        "keywords": [],  # fallback — short sessions with no other match
+        "keywords": [],  # fallback - short sessions with no other match
         "is_default": True,
     },
 ]
@@ -182,10 +189,10 @@ def generate_dialectic_summary(messages, title, project_name, previous_summaries
     Generate a multi-pass dialectic summary using a single LLM call.
 
     The prompt asks the LLM to run 3 reasoning passes internally:
-    Pass 1 — Extract: What was asked, done, decided, accomplished.
-    Pass 2 — Reason: What patterns and preferences emerge? What context
+    Pass 1 - Extract: What was asked, done, decided, accomplished.
+    Pass 2 - Reason: What patterns and preferences emerge? What context
              matters most for future sessions on this topic?
-    Pass 3 — Synthesize: A concise paragraph optimized for context injection.
+    Pass 3 - Synthesize: A concise paragraph optimized for context injection.
 
     Returns a dict with 'narrative' (fallback heuristic), 'reasoning' (pass 2),
     'context' (pass 3), and 'pass1' (pass 1).
@@ -214,7 +221,7 @@ def generate_dialectic_summary(messages, title, project_name, previous_summaries
             text = text[:max_len] + "…"
         return text
 
-    # Build a compact conversation excerpt — first 3 user + first 2 assistant messages
+    # Build a compact conversation excerpt - first 3 user + first 2 assistant messages
     excerpt_parts = []
     for m in (user_msgs[:3] + assistant_msgs[:2]):
         role = "User" if m["role"] == "user" else "Assistant"
@@ -394,7 +401,7 @@ def scan(summarize=False):
 
         messages = get_session_messages(conn, sid)
 
-        # Skip cron sessions — they're automated noise
+        # Skip cron sessions - they're automated noise
         if source == "cron":
             continue
 

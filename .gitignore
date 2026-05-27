@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+.next/
+
+# Generated data (auto-scanned from Hermes state.db)
+data/sessions/
+data/sessions.json
+data/projects.json
+data/daily_logs.json
+data/wiki-index.json
+
+# Server logs
+.server.log
+.server-error.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.local

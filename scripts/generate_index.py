@@ -9,8 +9,8 @@ import json
 import sys
 from pathlib import Path
 
-DATA_DIR = Path(__file__).parent.parent / "data"  # Wiki data directory
-SESSIONS_DIR = DATA_DIR / "sessions"  # Session files directory
+DATA_DIR = Path(__file__).parent.parent / "data"
+SESSIONS_DIR = DATA_DIR / "sessions"
 OUTPUT = DATA_DIR / "wiki-index.json"
 
 def generate_index():
@@ -32,9 +32,8 @@ def generate_index():
     # Quick lookup keywords
     keyword_map = {}
     keyword_map.update({
-        "resume": "Documents & Writing", "cv": "Documents & Writing", "cover letter": "Documents & Writing",
-        "document": "Documents & Writing", "pdf": "Documents & Writing", "writing": "Documents & Writing",
-        "website": "Personal Website", "portfolio": "Personal Website", "blog": "Personal Website",
+        "resume": "Resume System", "cv": "Resume System", "cover letter": "Resume System",
+        "website": "Personal Website", "kirankhutal": "Personal Website", "blog": "Personal Website",
         "memory wiki": "Memory Wiki", "wiki": "Memory Wiki",
         "youtube": "YouTube & Video", "video": "YouTube & Video", "shorts": "YouTube & Video",
         "career": "Career Research", "job": "Career Research", "company": "Career Research",
@@ -64,10 +63,13 @@ def generate_index():
         project_sessions.sort(key=lambda x: x.get("started_at") or "", reverse=True)
 
         for s in project_sessions:
+            dialectic = s.get("dialectic") or {}
             session_entry = {
                 "id": s["id"],
                 "title": s.get("auto_title") or s.get("title") or "(untitled)",
                 "summary": s.get("summary", ""),
+                "dialectic_context": dialectic.get("context", ""),
+                "reasoning": dialectic.get("reasoning", ""),
                 "date": s.get("date"),
                 "source": s.get("source", ""),
             }

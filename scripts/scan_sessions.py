@@ -3,9 +3,6 @@
 scan_sessions.py — Extracts session data from Hermes state.db
 and generates JSON files for the Memory Wiki.
 
-Environment variables:
-  HERMES_STATE_DB  Path to Hermes state.db (default: ~/.hermes/state.db)
-
 Outputs:
   data/sessions.json      — all sessions with metadata
   data/projects.json     — sessions grouped into projects/work-areas
@@ -22,12 +19,14 @@ import json
 import os
 import re
 import sys
+import subprocess
+import concurrent.futures
 from datetime import datetime, timezone
 from collections import defaultdict
 from pathlib import Path
 
-DB_PATH = Path(os.environ.get("HERMES_STATE_DB", os.path.expanduser("~/.hermes/state.db")))
-OUT_DIR = Path(__file__).parent.parent / "data"  # Wiki data output directory
+DB_PATH = os.path.expanduser("~/.hermes/state.db")
+OUT_DIR = Path(__file__).parent.parent / "data"
 SESSIONS_DIR = OUT_DIR / "sessions"
 
 # ── Project classification ──────────────────────────────────────────────
@@ -66,8 +65,8 @@ PROJECTS = [
         "name": "YouTube & Video",
         "emoji": "🎬",
         "description": "YouTube video creation, Shorts, and content strategy",
-        "keywords": ["youtube", "shorts", "video generation", "comfyui", "ayurveda",
-                     "fasting videos", "photorealistic"],
+        "keywords": ["youtube", "shorts", "video generation", "comfyui",
+                     "photorealistic", "video creation"],
     },
     {
         "name": "GitHub & Repo Management",
@@ -160,46 +159,136 @@ def classify_project(title, user_messages, assistant_messages):
     return None
 
 
-def generate_narrative_summary(messages, title, project_name):
+def run_hermes_prompt(prompt, max_chars=3000):
     """
-    Generate a 4-10 line narrative paragraph summarizing the session.
-    Reads the actual conversation to understand what was asked and achieved.
+    Run a prompt through hermes CLI and return the response.
+    Falls back to empty string if hermes is not available or fails.
+    Uses a single call with multi-pass instructions to avoid N× subprocess overhead.
+    """
+    try:
+        result = subprocess.run(
+            ["hermes", "-z", prompt],
+            capture_output=True, text=True, timeout=90
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()[:max_chars]
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+        pass
+    return ""
+
+
+def generate_dialectic_summary(messages, title, project_name, previous_summaries=None):
+    """
+    Generate a multi-pass dialectic summary using a single LLM call.
+
+    The prompt asks the LLM to run 3 reasoning passes internally:
+    Pass 1 — Extract: What was asked, done, decided, accomplished.
+    Pass 2 — Reason: What patterns and preferences emerge? What context
+             matters most for future sessions on this topic?
+    Pass 3 — Synthesize: A concise paragraph optimized for context injection.
+
+    Returns a dict with 'narrative' (fallback heuristic), 'reasoning' (pass 2),
+    'context' (pass 3), and 'pass1' (pass 1).
     """
     user_msgs = [m for m in messages if m["role"] == "user"]
     assistant_msgs = [m for m in messages if m["role"] == "assistant"]
     tool_msgs = [m for m in messages if m["role"] == "tool"]
 
     if not user_msgs:
-        return "No conversation content in this session."
+        return {
+            "narrative": "No conversation content in this session.",
+            "reasoning": "",
+            "context": "",
+            "pass1": "",
+            "pass2": "",
+        }
 
     def clean_text(text, max_len=200):
-        """Clean up message text for use in a summary paragraph."""
-        # Remove markdown headers, system notes, etc.
         text = re.sub(r'##.*?\n', '', text)
         text = re.sub(r'\[System note:.*?\]', '', text)
         text = re.sub(r'>.*?\n', '', text)
         text = re.sub(r'#+\s*', '', text)
         text = text.replace('\n', ' ').strip()
-        # Remove excessive whitespace
         text = re.sub(r'\s+', ' ', text)
         if len(text) > max_len:
             text = text[:max_len] + "…"
         return text
 
-    def first_sentence(text):
-        """Extract the first meaningful sentence from text."""
-        text = clean_text(text, 300)
-        # Split on sentence boundaries
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        for s in sentences:
-            s = s.strip()
-            if len(s) > 15:
-                return s
-        return text[:120]
+    # Build a compact conversation excerpt — first 3 user + first 2 assistant messages
+    excerpt_parts = []
+    for m in (user_msgs[:3] + assistant_msgs[:2]):
+        role = "User" if m["role"] == "user" else "Assistant"
+        content = clean_text(m["content"], 500)
+        if content:
+            excerpt_parts.append(f"{role}: {content}")
+    excerpt = "\n".join(excerpt_parts)
 
-    lines = []
+    tools_used = list(set(m["tool_name"] for m in tool_msgs if m["tool_name"]))
+    tools_str = ", ".join(tools_used[:5]) if tools_used else "none"
 
-    # ── What the user asked ──
+    # Build previous session context for cross-referencing
+    prev_context = ""
+    if previous_summaries:
+        prev_snippets = []
+        for s in previous_summaries[:5]:
+            ctx = s.get("context") or s.get("pass1") or s.get("summary", "") or ""
+            if ctx:
+                # Take first sentence only to keep compact
+                first_sent = re.split(r'(?<=[.!?])\s+', ctx)[0]
+                prev_snippets.append(first_sent[:200])
+        if prev_snippets:
+            prev_context = "\n".join(prev_snippets)
+
+    # Single prompt that asks for all 3 passes in structured output
+    dialectic_prompt = f"""Analyze this conversation session through 3 reasoning passes. Output in this exact format:
+
+---PASS1---
+[3-5 sentences: What was asked, done, decided, and accomplished. Third person, factual.]
+
+---PASS2---
+[2-3 sentences: What patterns, preferences, or setup choices should be remembered for future sessions on this topic? Focus on actionable context.]
+
+---PASS3---
+[One paragraph, 4-6 sentences: A rich context summary for an AI assistant. Cover what was accomplished, key decisions/preferences, where things left off, and important technical details (paths, tools, configs). Third person, factual, optimized for context injection.]
+
+Session title: {title}
+Project: {project_name}
+Tools used: {tools_str}
+{"Previous session context from same project:" if prev_context else ""}
+{prev_context}
+
+Conversation excerpt:
+{excerpt}
+
+Now run all 3 passes. Do not include any other text."""
+
+    result = run_hermes_prompt(dialectic_prompt, max_chars=4000)
+
+    # Parse the structured output
+    pass1 = pass2 = pass3 = ""
+    if result:
+        # Extract each pass section
+        for tag, target in [("---PASS1---", "pass1"), ("---PASS2---", "pass2"), ("---PASS3---", "pass3")]:
+            start = result.find(tag)
+            if start >= 0:
+                start += len(tag)
+                # Find next tag or end of string
+                end = len(result)
+                for next_tag in ["---PASS1---", "---PASS2---", "---PASS3---"]:
+                    if next_tag != tag:
+                        next_pos = result.find(next_tag, start)
+                        if next_pos >= 0 and next_pos < end:
+                            end = next_pos
+                text = result[start:end].strip()
+                if target == "pass1":
+                    pass1 = text
+                elif target == "pass2":
+                    pass2 = text
+                elif target == "pass3":
+                    pass3 = text
+
+    # Fallback narrative (heuristic, no LLM needed)
+    narrative_lines = []
     first_user = clean_text(user_msgs[0]["content"], 250)
     for prefix in [
         "i want to ", "i'd like to ", "can you ", "please ", "hey ", "hi ",
@@ -213,80 +302,16 @@ def generate_narrative_summary(messages, title, project_name):
         first_user = first_user[0].upper() + first_user[1:]
         if not first_user[-1] in ".!?":
             first_user += "."
-        lines.append(f"The user asked about {first_user[0].lower()}{first_user[1:]}")
+        narrative_lines.append(f"The user asked about {first_user[0].lower()}{first_user[1:]}")
+    narrative = " ".join(narrative_lines) if narrative_lines else f"Session about {title or project_name}."
 
-    # ── What I did (from first substantive assistant response) ──
-    for msg in assistant_msgs[:5]:
-        content = msg["content"].strip()
-        # Skip very short or meta responses
-        if len(content) < 30:
-            continue
-        # Skip responses that are just questions back
-        if content.strip().endswith("?") and len(content) < 100:
-            continue
-
-        # Extract the key action from the response
-        action = first_sentence(content)
-        if action and len(action) > 20:
-            # Clean up the action text
-            action = action.strip()
-            if not action[-1] in ".!?":
-                action += "."
-            lines.append(f"I {action[0].lower()}{action[1:]}")
-            break
-
-    # ── Follow-up from the user ──
-    if len(user_msgs) > 1:
-        follow_up = clean_text(user_msgs[1]["content"], 150)
-        for prefix in ["i want to ", "i'd like to ", "can you ", "please ",
-                        "also ", "ok ", "yes ", "and ", "but ", "so "]:
-            if follow_up.lower().startswith(prefix):
-                follow_up = follow_up[len(prefix):]
-                break
-        follow_up = follow_up.strip()
-        if follow_up and len(follow_up) > 10:
-            follow_up = follow_up[0].upper() + follow_up[1:]
-            if not follow_up[-1] in ".!?":
-                follow_up += "."
-            lines.append(f"The user also {follow_up[0].lower()}{follow_up[1:]}")
-
-    # ── Tools used ──
-    tools_used = list(set(m["tool_name"] for m in tool_msgs if m["tool_name"]))
-    if tools_used:
-        # Clean up tool names
-        clean_tools = []
-        for t in tools_used[:6]:
-            # Remove common prefixes
-            t = t.replace("mcp_", "").replace("_", " ").strip()
-            if t:
-                clean_tools.append(t)
-        if clean_tools:
-            if len(clean_tools) <= 3:
-                tool_str = ", ".join(clean_tools)
-            else:
-                tool_str = ", ".join(clean_tools[:3]) + f" and {len(clean_tools) - 3} more"
-            lines.append(f"I used tools including {tool_str}.")
-
-    # ── Outcome / scope ──
-    total_user = len(user_msgs)
-    total_asst = len(assistant_msgs)
-    if total_user > 10:
-        lines.append(f"This was an extensive session with {total_user} exchanges covering multiple aspects and iterations.")
-    elif total_user > 5:
-        lines.append(f"The session involved {total_user} exchanges with follow-up questions and refinements.")
-    elif total_user > 2:
-        lines.append(f"The session had {total_user} exchanges with some back-and-forth discussion.")
-
-    # Ensure we have at least 3 lines
-    if len(lines) < 3 and assistant_msgs:
-        # Add a line from the last assistant message
-        last = assistant_msgs[-1]["content"].strip()
-        if last:
-            last_clean = clean_text(last, 150)
-            if len(last_clean) > 20:
-                lines.append(f"In response, I {last_clean[0].lower()}{last_clean[1:]}")
-
-    return " ".join(lines)
+    return {
+        "narrative": narrative,
+        "reasoning": pass2,
+        "context": pass3 or pass1,
+        "pass1": pass1,
+        "pass2": pass2,
+    }
 
 
 def get_session_messages(conn, session_id):
@@ -351,6 +376,7 @@ def scan(summarize=False):
     sessions = []
     project_map = defaultdict(lambda: {"sessions": [], "description": "", "emoji": ""})
     daily_logs = defaultdict(list)
+    session_summaries = {}  # sid -> summary dict, for dialectic cross-referencing
 
     cur = conn.execute(
         """SELECT id, title, source, started_at, ended_at, message_count, 
@@ -377,16 +403,25 @@ def scan(summarize=False):
         # Generate auto-title
         auto_title = generate_auto_title(messages, title, project_name)
 
-        # Generate narrative summary
+        # Generate dialectic summary (multi-pass LLM reasoning)
         summary = None
+        dialectic = None
         if summarize:
-            summary = generate_narrative_summary(messages, title, project_name)
+            # Collect previous session summaries from the same project
+            prev_summaries = [
+                session_summaries[psid]
+                for psid in project_map[project_name]["sessions"]
+                if psid in session_summaries
+            ]
+            dialectic = generate_dialectic_summary(messages, title, project_name, prev_summaries)
+            summary = dialectic.get("context") or dialectic.get("pass1") or dialectic.get("narrative")
 
         session_data = {
             "id": sid,
             "title": title,
             "auto_title": auto_title,
             "summary": summary,
+            "dialectic": dialectic,
             "project": project_name,
             "source": source,
             "started_at": ts_to_dt(started_at),
@@ -403,6 +438,10 @@ def scan(summarize=False):
             json.dump(session_data, f, indent=2, ensure_ascii=False)
 
         sessions.append({k: v for k, v in session_data.items() if k != "messages"})
+
+        # Store dialectic summary for cross-referencing in later sessions
+        if dialectic:
+            session_summaries[sid] = dialectic
 
         # Build project map
         project_map[project_name]["sessions"].append(sid)

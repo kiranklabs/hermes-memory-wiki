@@ -36,9 +36,9 @@ PROJECTS = [
     {
         "name": "Memory Wiki",
         "emoji": "⚡",
-        "description": "Building the Memory Wiki site to browse conversation history",
-        "keywords": ["memory wiki", "session scanner", "memory-wiki", "session data",
-                     "browsable record", "daily logs", "subjects we've talked"],
+        "description": "Building and improving the Memory Wiki ecosystem",
+        "keywords": ["memory-wiki", "scan_sessions", "memory wiki site",
+                     "memory wiki server", "memory wiki ecosystem"],
     },
     {
         "name": "Personal Website",
@@ -393,6 +393,19 @@ def scan(summarize=False):
         date_str = ts_to_date(started_at)
 
         messages = get_session_messages(conn, sid)
+
+        # Skip cron sessions — they're automated noise
+        if source == "cron":
+            continue
+
+        # Skip sessions with too few messages (less than 3 = not meaningful)
+        if len(messages) < 3:
+            continue
+
+        # Skip sessions that are just the scanner running (dialectic pass outputs as user messages)
+        user_msg_texts_check = [m["content"] for m in messages if m["role"] == "user"]
+        if any("---PASS" in msg or "3 reasoning passes" in msg for msg in user_msg_texts_check):
+            continue
 
         # Classify into project
         user_msg_texts = [m["content"] for m in messages if m["role"] == "user"]

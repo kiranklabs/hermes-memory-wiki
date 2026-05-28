@@ -1,6 +1,45 @@
 # Changelog
 
-## v2.1 - Scanner Data Quality Fix
+## v2.5 — Facts, Decisions & Cron Jobs
+
+### New Features
+
+- **Facts layer** (`facts.json`): Deduplicated factual statements extracted from session summaries, categorized as environment, preferences, tools, conventions, and constraints. Facts are overwritten (not appended) when they change — old facts are superseded, never deleted.
+- **Decisions layer** (`decisions.json`): User decisions extracted from session summaries with full supersedence trail. A decision made today can supersede one from last month — the old choice is kept but marked as replaced, so it never "sneaks back in."
+- **Separate Cron Jobs section**: Cron sessions (auto-scan, backup, priority check) are now classified separately and displayed in their own sidebar section — not mixed into project categories.
+- **Facts & Decisions pages**: New browseable pages at `/facts` and `/decisions` showing all extracted facts and decisions, grouped by category. Pages render dynamically (not stale-cached) so data is always fresh.
+- **`rebuild_data.py` utility**: Safely rebuilds all index files (sessions, projects, daily logs, facts, decisions, wiki index) from session data. Run after every scan to guarantee consistency.
+
+### Changed
+
+- **Scanner v3.0 rewrite**: Removed all lightweight extraction. Every session now gets a proper LLM-generated narrative summary, auto-generated title, and structured fact/decision extraction — all in a single `hermes -z` call per session.
+- **Parallel LLM processing**: Scanner uses `ThreadPoolExecutor(max_workers=3)` to process 3 sessions concurrently, reducing scan time by ~3x.
+- **Incremental scanning**: Sessions that already have summaries are skipped on re-scan. Only new sessions get LLM calls, making hourly cron runs fast.
+- **Date filter**: Scanner only processes sessions from the last 7 days by default (configurable via `days_back` parameter).
+- **Session page shows narrative summary**: Removed bulleted structure (what was asked/done/decisions/tools). Now shows a clean LLM-generated narrative summary paragraph.
+- **Sidebar**: All collapsible sections (Projects, Timeline, Cron Jobs) are closed by default. Cron Jobs section moved to the bottom of the sidebar. Title renamed to "Hermes Memory Wiki".
+
+### UI Changes
+
+- Sidebar order: Overview → Facts → Decisions → Projects → Timeline → Cron Jobs (last)
+- Facts and decisions pages are server-rendered on every request (dynamic) — no stale cache
+- Home page title: "Memory Wiki" → "Hermes Memory Wiki"
+
+### Removed
+
+- `--summarize` flag from scanner: LLM summarization is always enabled now (it was the only thing that produced good results)
+- Lightweight extraction layer: Bulleted summaries, pattern-based fact extraction — all replaced by LLM-generated narrative summaries with structured fact/decision extraction
+- Em-dashes in scanner code (replaced with hyphens to avoid encoding issues)
+
+### Performance
+
+- Scan time for ~100 new sessions: ~4-5 minutes (down from ~10+ minutes) thanks to parallel processing
+- Incremental scans (hourly cron): Only new sessions processed, typically under 1 minute
+- Facts/decisions pages: Zero token cost in context injection — pre-extracted, compact JSON files
+
+---
+
+## v2.1 — Scanner Data Quality Fix
 
 ### Fixes
 
@@ -11,7 +50,7 @@
 
 ---
 
-## v2.0 - Multi-Pass Dialectic Reasoning
+## v2.0 — Multi-Pass Dialectic Reasoning
 
 ### New Features
 

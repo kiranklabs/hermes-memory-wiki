@@ -64,13 +64,10 @@ def generate_index():
         project_sessions.sort(key=lambda x: x.get("started_at") or "", reverse=True)
 
         for s in project_sessions:
-            dialectic = s.get("dialectic") or {}
             session_entry = {
                 "id": s["id"],
                 "title": s.get("auto_title") or s.get("title") or "(untitled)",
                 "summary": s.get("summary", ""),
-                "dialectic_context": dialectic.get("context", ""),
-                "reasoning": dialectic.get("reasoning", ""),
                 "date": s.get("date"),
                 "source": s.get("source", ""),
             }

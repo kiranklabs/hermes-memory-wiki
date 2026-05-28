@@ -19,12 +19,11 @@ export default async function SessionPage({
 
   return (
     <main className="max-w-4xl mx-auto px-6 py-8">
-      {/* Session Summary Banner */}
+      {/* Header */}
       <div
         className="rounded-xl p-6 mb-8"
         style={{ background: "var(--surface)", border: "1px solid var(--border)" }}
       >
-        {/* Project badge + Date */}
         <div className="flex items-center gap-3 mb-3">
           {project && (
             <Link
@@ -40,10 +39,8 @@ export default async function SessionPage({
           </span>
         </div>
 
-        {/* Title */}
         <h1 className="text-2xl font-bold mb-1">{displayTitle}</h1>
 
-        {/* Original title if different */}
         {session.auto_title && session.auto_title !== session.title && session.title && (
           <div className="text-xs mb-3" style={{ color: "var(--text-muted)" }}>
             Original: {session.title}
@@ -53,23 +50,23 @@ export default async function SessionPage({
         {/* Narrative Summary */}
         {session.summary && (
           <p
-            className="text-sm leading-relaxed mt-3 mb-4"
-            style={{ color: "var(--text-muted)" }}
+            className="text-sm leading-relaxed mt-3"
+            style={{ color: "var(--text)" }}
           >
             {session.summary}
           </p>
         )}
 
         {/* Stats row */}
-        <div className="flex flex-wrap gap-3 text-sm" style={{ color: "var(--text-muted)" }}>
-          <span>💬 {session.message_count} messages</span>
-          <span>🔧 {session.tool_call_count} tool calls</span>
-          <span className="capitalize">📡 {session.source}</span>
+        <div className="flex flex-wrap gap-3 text-sm mt-4" style={{ color: "var(--text-muted)" }}>
+          <span>{"💬"} {session.message_count} messages</span>
+          <span>{"🔧"} {session.tool_call_count} tool calls</span>
+          <span className="capitalize">{"📡"} {session.source}</span>
           {session.input_tokens > 0 && (
-            <span>⬆️ {session.input_tokens.toLocaleString()} in</span>
+            <span>{"⬆️"} {session.input_tokens.toLocaleString()} in</span>
           )}
           {session.output_tokens > 0 && (
-            <span>⬇️ {session.output_tokens.toLocaleString()} out</span>
+            <span>{"⬇️"} {session.output_tokens.toLocaleString()} out</span>
           )}
         </div>
       </div>
@@ -91,8 +88,8 @@ export default async function SessionPage({
                   color: "var(--text-muted)",
                 }}
               >
-                <span style={{ color: "var(--gold)" }}>⚙ {msg.tool_name || "tool"}:</span>{" "}
-                {msg.content.length > 300 ? msg.content.slice(0, 300) + "…" : msg.content}
+                <span style={{ color: "var(--gold)" }}>{"⚙"} {msg.tool_name || "tool"}:</span>{" "}
+                {msg.content.length > 300 ? msg.content.slice(0, 300) + "..." : msg.content}
               </div>
             );
           }
@@ -103,7 +100,7 @@ export default async function SessionPage({
               className="rounded-xl p-5"
               style={{
                 background: isUser ? "rgba(0, 200, 180, 0.08)" : "var(--surface)",
-                border: `1px solid ${isUser ? "var(--accent)" : "var(--border)"}`,
+                border: isUser ? "1px solid var(--accent)" : "1px solid var(--border)",
               }}
             >
               <div className="flex items-center justify-between mb-3">
@@ -111,7 +108,7 @@ export default async function SessionPage({
                   className="text-sm font-semibold"
                   style={{ color: isUser ? "var(--accent)" : "var(--gold)" }}
                 >
-                  {isUser ? "👤 You" : "🤖 Agent"}
+                  {isUser ? "👤 You" : "🦉 Agent"}
                 </span>
                 {msg.timestamp && (
                   <span className="text-xs" style={{ color: "var(--text-muted)" }}>

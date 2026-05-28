@@ -1,294 +1,276 @@
 # 🧠 Hermes Memory Wiki
 
-> A browsable, searchable memory layer for Hermes AI agent conversations — automatically captured, summarized with multi-pass dialectic reasoning, and injected as context into every new session.
+> **Never repeat yourself to your AI agent.** Hermes Memory Wiki gives your AI assistant a persistent memory — automatically capturing, organizing, and injecting context from every conversation into every new session.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Hermes Agent](https://img.shields.io/badge/Built%20for-Hermes%20Agent-green.svg)](https://hermes-agent.nousresearch.com)
-[![Version](https://img.shields.io/badge/version-2.0-blue.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-2.5-blue.svg)](CHANGELOG.md)
 
-## What is it?
+---
 
-Hermes Memory Wiki solves a fundamental problem with AI agents: **every new session starts from scratch**. You repeat context, re-explain your projects, and risk duplicating work. This system changes that.
+## Why This Exists
 
-It's three things working together:
+Here's the problem: **every new Hermes session starts from scratch.** You re-explain your project structure. You re-state your preferences. You risk duplicating work you already did last week. It's like talking to someone with amnesia every single day.
 
-1. **📖 A web wiki** — Browse all past sessions, search conversations, explore projects, and read full transcripts at `http://localhost:9876`
-2. **🧠 A context skill with dialectic reasoning** — Automatically loads rich, relevant previous work into every new Hermes session using multi-pass LLM reasoning to capture not just *what* happened but *why* it matters
-3. **⚡ An auto-scan pipeline** — Runs every hour to capture new sessions, generate dialectic summaries, classify into projects, and update the wiki
+Hermes Memory Wiki solves this by giving your AI a **persistent, searchable memory layer** that automatically:
 
-## v2.0 — What's New
+1. **📖 Captures** — Every Hermes conversation is scanned, summarized with an LLM, and stored in a browsable web wiki
+2. **🧠 Remembers** — Facts, decisions, and preferences are extracted and injected into new sessions automatically
+3. **⚡ Runs itself** — Hourly scans, daily backups, zero maintenance
 
-The biggest upgrade in v2.0 is **multi-pass dialectic reasoning** for session summaries.
+---
 
-Instead of simple keyword extraction, each session is now analyzed through 3 LLM-powered reasoning passes:
+## What's New in v2.5
 
-| Pass | What it does |
-|------|-------------|
-| **Extract** | Identifies what was asked, done, decided, and accomplished |
-| **Reason** | Analyzes patterns and preferences across previous sessions in the same project |
-| **Synthesize** | Produces a rich context summary optimized for AI assistant injection |
+### 🏷️ Facts Layer — Your Agent Learns What's True
 
-This means when you start a new session saying "let's work on my API project," the injected context captures *preferences* (e.g., "user prefers JWT auth with refresh tokens"), *decisions* (e.g., "using PostgreSQL with migrations"), and *where things left off* (e.g., "next step is adding rate limiting middleware") — not just a flat summary.
+The scanner now extracts **deduplicated factual statements** from every conversation and stores them in `facts.json`:
+
+- **Environment** — "User runs macOS, deploys via Vercel"
+- **Tools** — "Uses Next.js, Tailwind, Python, Docker"
+- **Preferences** — "Prefers concise responses, dark theme, branch/PR workflow"
+- **Constraints** — "Port 9876, avoids common ports 3000-8080"
+
+**Key benefit:** Facts are **overwritten, not appended**. When something changes (e.g., switching from PostgreSQL to SQLite), the old fact is superseded. Your agent always knows the current truth — not a contradictory history.
+
+### ⚖️ Decisions Layer — Your Agent Knows What You Decided
+
+User decisions are extracted and stored in `decisions.json` with a **full supersedence trail**:
 
 ```
-Hermes conversations
+✅ Active:   "Use JWT with refresh tokens for API auth" (May 24)
+↩️ Superseded: "Use session-based auth with cookies" (May 20)
+            Replaced by fact_042 in session 20260524_153000
+```
+
+**Key benefit:** Old choices are never deleted — they're **superseded with a trail**. This prevents the AI from "forgetting" what you decided last week and suggesting something you already rejected.
+
+### ⚙️ Cron Jobs — Separated From Your Work
+
+Auto-generated sessions (hourly scans, daily backups, priority check-ins) are now **classified separately** in their own sidebar section. They no longer pollute your project categories.
+
+### 📄 New: Facts & Decisions Pages
+
+Browse all extracted facts and decisions at `/facts` and `/decisions` — grouped by category, with supersedence history. Pages render dynamically so data is always fresh.
+
+### 🔄 Scanner v2.5 — Faster & Smarter
+
+- **LLM-only summarization** — Every session gets a rich narrative summary, auto-generated title, and structured fact/decision extraction (single `hermes -z` call)
+- **Parallel processing** — 3 concurrent workers reduce scan time by ~3x
+- **Incremental scanning** — Already-summarized sessions are skipped; only new sessions get LLM calls
+- **Date filter** — Only scans sessions from the last 7 days by default
+
+---
+
+## End-to-End Example: A Day With Hermes Memory Wiki
+
+Let's walk through how this works in practice.
+
+### Setup (One-Time)
+```bash
+git clone https://github.com/kiranklabs/hermes-memory-wiki.git
+cd hermes-memory-wiki
+bash scripts/install.sh
+# → Installs everything, runs initial scan, starts the wiki server
+```
+
+### Session 1: Building a Web App
+
+```
+You: "I want to build a personal portfolio website.
+      Use Next.js 15, Tailwind CSS, deploy on Vercel.
+      I prefer dark theme with emerald accent colors."
+
+Hermes: "Got it. I'll set up Next.js 15 with Tailwind CSS v4.
+         Creating project at ~/workspace/portfolio-site..."
+         [Works for 2 hours, sets up CI/CD, deploys to Vercel]
+```
+
+**Behind the scenes:** The scanner generates a narrative summary:
+> *"User decided to build a personal portfolio website using Next.js 15 and Tailwind CSS v4. Project deployed to Vercel. User prefers dark theme with emerald accent colors (#10b981). Site structure: Home, About, Projects, Blog sections."*
+
+And extracts:
+- **Facts:** `environment: Vercel deployment`, `tools: Next.js 15, Tailwind CSS v4`, `preferences: dark theme, emerald accent`
+- **Decisions:** `"Use Next.js 15 + Tailwind CSS for portfolio site"`, `"Deploy on Vercel"`
+
+### Session 2: Continuing Work (Next Day)
+
+```
+You: "Let's continue working on my portfolio."
+
+Hermes: "📚 Previous Work: Personal Website
+         Building a portfolio site with Next.js 15, Tailwind CSS, deployed to Vercel.
+         Uses dark theme with emerald accent. Structure: Home, About, Projects, Blog.
+         Last worked: yesterday, 21:00.
+         
+         What would you like to work on?"
+```
+
+**No re-explaining.** Hermes knows the stack, the deployment target, the design preferences, and where things left off. The injected context is ~100 words — rich but concise.
+
+### Session 3: Changing Direction
+
+```
+You: "Actually, let me switch from Next.js to Astro.
+      I want better performance and less JavaScript."
+
+Hermes: "Got it, switching from Next.js to Astro.
+         I know your site uses Tailwind CSS and deploys to Vercel — 
+         I'll keep that intact while migrating the framework."
+```
+
+Behind the scenes, the new decision supersedes the old one:
+- ✅ **Active:** `"Switch portfolio from Next.js to Astro for better performance"` (today)
+- ↩️ **Superseded:** `"Use Next.js 15 + Tailwind CSS for portfolio site"` (yesterday)
+
+The fact layer gets updated:
+- ✅ **Active:** `tools: Astro, Tailwind CSS v4`
+- ↩️ **Superseded:** `tools: Next.js 15, Tailwind CSS v4`
+
+### Session 4: Browsing the Wiki
+
+```
+You: "What decisions have I made about authentication?"
+
+[Open wiki at http://localhost:9876/decisions]
+→ Shows all auth-related decisions with dates and supersedence trail
+
+You: "What tools do I typically use?"
+
+[Open wiki at http://localhost:9876/facts]
+→ Shows categorized facts: environment, tools, preferences, conventions, constraints
+```
+
+---
+
+## Architecture
+
+### Tech Stack
+
+| Layer | Technology | Why |
+|-------|-----------|-----|
+| **Frontend** | Next.js 15 (App Router), Tailwind CSS 4, TypeScript | Fast, modern, zero-config |
+| **Data Layer** | JSON files from Hermes `state.db` (SQLite) | Zero dependencies, human-readable, git-friendly |
+| **Scanner** | Python 3 (stdlib only) | No pip packages, works out of the box |
+| **Context** | Hermes skill (SKILL.md) | Reads files directly — no server needed |
+| **Scheduling** | Hermes cron jobs + macOS launch agent | Auto-scan every hour, daily backups |
+
+### Data Flow
+
+```
+Hermes state.db (source of truth)
         │
-        │  every 1 hour (auto)
+        │  scan_sessions.py  (every 1 hour, automatic)
+        │  ┌─────────────────────────────────────────────┐
+        │  │  1. Collect new/modified sessions           │
+        │  │  2. LLM summarizes each session             │
+        │  │     → narrative summary + auto-title         │
+        │  │     → extract facts (environment, tools,     │
+        │  │       preferences, conventions, constraints) │
+        │  │     → extract decisions                      │
+        │  │  3. Classify into projects / cron jobs       │
+        │  │  4. Write individual session files            │
+        │  └─────────────────────────────────────────────┘
         ▼
-┌──────────────────────┐
-│  Memory Wiki Auto-Scan│  Hermes cron job
-│  • Detects new sessions│
-│  • 3-pass dialectic    │
-│    reasoning (LLM)     │
-│  • Classifies projects │
-└──────────┬───────────┘
-           │
-           ▼
-┌─────────────────────┐     ┌──────────────────────┐
-│   Memory Wiki UI     │     │  Wiki Context Skill   │
-│   (localhost:9876)   │     │  (auto-loads per      │
-│                      │     │   session)            │
-│  • Browse sessions   │     │                       │
-│  • Search everything │     │  • Reads dialectic    │
-│  • Project grouping  │     │    context from index │
-│  • Daily timeline    │     │  • Matches your msg   │
-│  • Full transcripts  │     │  • Injects rich       │
-└─────────────────────┘     │    context (~150w)    │
-           ▲                └──────────────────────┘
-           │                          ▲
-      You browse                  Every new session
-      manually                    gets dialectic context
-                                  automatically
+data/sessions/<id>.json    ← Full session data + summary
+data/projects.json         ← Project groupings (auto-classified)
+data/daily_logs.json       ← Sessions grouped by day
+data/cron-jobs.json        ← Cron job sessions (categorized separately)
+data/facts.json            ← Deduplicated facts (5 categories, supersedence)
+data/decisions.json        ← User decisions (supersedence trail)
+        │
+        │  rebuild_data.py  (runs after every scan)
+        ▼
+data/wiki-index.json       ← Compact index for context injection (~15KB)
+        │
+        ├──→ 📖 Wiki UI (Next.js, localhost:9876)
+        │       ├─ Home: stats, projects, recent sessions
+        │       ├─ Sessions: narrative summary + full transcript
+        │       ├─ Projects: all sessions in a project
+        │       ├─ Timeline: sessions grouped by day
+        │       ├─ Facts: browse facts by category
+        │       └─ Decisions: browse decisions with history
+        │
+        └──→ 🧠 Context Skill (auto-loads at session start)
+               ├─ Reads wiki-index.json (~15KB, fast)
+               ├─ Matches message against projects/keywords
+               ├─ If relevant: injects facts + decisions + recent work
+               └─ If no match: stays silent (zero token cost)
+```
+
+### File Structure
+
+```
+hermes-memory-wiki/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx                  # Home: stats, projects, recent sessions
+│   │   ├── layout.tsx                # Root: sidebar + search bar
+│   │   ├── sessions/[id]/page.tsx    # Session: narrative summary + transcript
+│   │   ├── projects/[name]/page.tsx  # Project: all sessions in project
+│   │   ├── daily/[date]/page.tsx     # Daily: sessions for that day
+│   │   ├── facts/page.tsx            # Facts: browse by category
+│   │   ├── decisions/page.tsx        # Decisions: browse with history
+│   │   └── api/search/route.ts       # Full-text search API
+│   ├── components/
+│   │   ├── Sidebar.tsx               # Tree nav: projects, timeline, cron
+│   │   └── SearchBar.tsx             # Persistent search
+│   └── lib/
+│       ├── data.ts                   # Data loading (projects, facts, decisions, cron)
+│       └── format.ts                 # Formatting utilities
+├── scripts/
+│   ├── scan_sessions.py              # v2.5: LLM summaries, facts, decisions
+│   ├── rebuild_data.py               # Rebuild all index files from session data
+│   ├── generate_index.py             # Wiki index generator
+│   ├── install.sh                    # One-click installer
+│   ├── uninstall.sh                  # Complete uninstaller
+│   ├── memory-wiki-backup.sh         # Daily backup script
+│   ├── memory-wiki-restore.sh        # Restore from backup
+│   └── rescan.sh                     # Manual rescan convenience
+├── data/                             # Generated locally (gitignored)
+│   ├── sessions/                     # Individual session files
+│   ├── sessions.json                 # Session index
+│   ├── projects.json                 # Project groupings
+│   ├── daily_logs.json               # Daily logs
+│   ├── cron-jobs.json                # Cron job sessions
+│   ├── facts.json                    # Facts layer
+│   ├── decisions.json                # Decisions layer
+│   └── wiki-index.json               # Compact context injection index
+├── public/                           # Static assets
+└── ...
 ```
 
 ## Quick Start
 
 ### One-Line Install
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kiranklabs/hermes-memory-wiki/main/scripts/install.sh | bash
 ```
 
 ### Manual Install
-
 ```bash
-# Clone the repo
 git clone https://github.com/kiranklabs/hermes-memory-wiki.git
 cd hermes-memory-wiki
-
-# Run the installer
 bash scripts/install.sh
 ```
 
-The installer will:
-1. ✅ Check prerequisites (Hermes, Node.js, Python)
-2. ✅ Install npm dependencies
-3. ✅ Run initial session scan
-4. ✅ Install the launch agent (auto-starts server on login)
-5. ✅ Install the `memory-wiki` CLI
-6. ✅ Install the wiki-context skill
-7. ✅ Set up auto-scan and backup cron jobs
+The installer handles everything:
+1. ✅ Checks prerequisites (Hermes, Node.js, Python)
+2. ✅ Installs npm dependencies
+3. ✅ Runs initial session scan (summarizes all existing Hermes sessions)
+4. ✅ Installs the launch agent (auto-starts on login, auto-restarts if crashed)
+5. ✅ Installs the `memory-wiki` CLI
+6. ✅ Installs the wiki-context skill
+7. ✅ Sets up auto-scan (hourly) and daily backup (2 AM) cron jobs
 
 ### After Install
-
 ```bash
-memory-wiki open      # Open the wiki in your browser
+memory-wiki open      # Open wiki in browser
 memory-wiki status    # Check server status
-memory-wiki rescan    # Manually scan new sessions
+memory-wiki rescan    # Manually trigger a scan
 ```
 
 **Browse to: [http://localhost:9876](http://localhost:9876)**
-
-## Features
-
-### 📖 Browsable Session Archive
-Every Hermes conversation is captured and presented in a clean, searchable web interface:
-- **Session detail pages** with narrative summaries and full transcripts
-- **Project grouping** — sessions automatically classified into projects (Website, Resume, Career Research, etc.)
-- **Daily timeline** — browse sessions by day
-- **Full-text search** across all conversations
-- **Dark theme** optimized for long reading sessions
-
-### 🧠 Automatic Context Injection with Dialectic Reasoning
-The wiki-context skill runs silently at the start of every new session:
-- Reads the compact wiki index (~10KB, fast)
-- Matches your message against project names, descriptions, and keywords
-- If relevant previous work exists, injects a rich dialectic context summary
-- If no match, stays silent — zero token overhead
-
-**Dialectic reasoning** means each session summary is generated by a multi-pass LLM process:
-1. **Extract**: What was asked, done, decided, and accomplished
-2. **Reason**: What patterns and preferences emerge from this and previous sessions
-3. **Synthesize**: A concise context summary optimized for AI assistant injection
-
-This produces far richer context than simple keyword extraction — the injected summary captures not just *what* happened but *why* it matters and *what to remember*.
-
-**Example:**
-> **You:** "Let's pick up where we left off on the API project"
->
-> **Hermes (automatically):**
-> ```
-> 📚 Previous Work: Backend API
-> Built a REST API with authentication and rate limiting.
-> The user prefers JWT-based auth with refresh tokens. Set up the database schema
-> using PostgreSQL with migrations. Deployed to production via Docker. Next step
-> is adding rate limiting middleware. Last worked: 2026-05-24.
-> ```
-> Now, what would you like to update?
-
-### ⚡ Auto-Scan Pipeline with Dialectic Reasoning
-- **Every 1 hour**: Hermes cron job scans `state.db` for new/changed sessions
-- **Multi-pass dialectic summaries**: Each session gets analyzed through 3 LLM reasoning passes (Extract → Reason → Synthesize) that capture what happened, what patterns emerged, and what context matters for future sessions
-- **Auto-titles**: Session titles are generated from the first user message
-- **Project classification**: Sessions are grouped into meaningful work areas using keyword matching
-- **Cross-session reasoning**: Pass 2 uses previous session summaries from the same project to identify patterns and preferences
-- **Daily backup**: Full backup tarball created at 2:00 AM, keeps last 10 backups
-
-### 🔧 Zero Maintenance
-- **Launch agent** keeps the wiki server running — auto-starts on login, auto-restarts if it crashes
-- **Cron jobs** handle scanning and backups automatically
-- **CLI commands** for manual control when needed
-
-## Architecture
-
-### Tech Stack
-- **Frontend**: Next.js 16+ (App Router), Tailwind CSS 4, TypeScript
-- **Data Layer**: JSON files generated from Hermes `state.db` (SQLite)
-- **Scanner**: Python 3 script with zero external dependencies (stdlib only)
-- **Context**: Hermes skill (SKILL.md) — no server dependency, reads files directly
-- **Scheduling**: Hermes cron jobs + macOS launch agent
-
-### Data Flow
-```
-Hermes state.db (source of truth)
-        │
-        │  scan_sessions.py (--summarize)
-        │  ┌─────────────────────────────────────────┐
-        │  │  Pass 1: Extract key facts              │
-        │  │  Pass 2: Reason about patterns          │  ← Multi-pass dialectic
-        │  │  Pass 3: Synthesize context summary     │     reasoning via LLM
-        │  └─────────────────────────────────────────┘
-        ▼
-data/sessions/<id>.json    ← Full session data + dialectic summary
-data/projects.json         ← Project groupings
-data/daily_logs.json       ← Daily session groupings
-        │
-        │  generate_index.py
-        ▼
-data/wiki-index.json       ← Compact index with dialectic context (skill-consumable)
-        │
-        ├──→ Wiki UI (Next.js, port 9876)
-        └──→ Wiki Context Skill (reads dialectic_context at session start)
-```
-
-### File Structure
-```
-hermes-memory-wiki/
-├── src/
-│   ├── app/
-│   │   ├── page.tsx              # Home page (stats, projects, recent sessions)
-│   │   ├── layout.tsx            # Root layout (sidebar + search bar)
-│   │   ├── sessions/[id]/page.tsx  # Session detail (summary + transcript)
-│   │   ├── daily/[date]/page.tsx   # Daily log (all sessions for a day)
-│   │   ├── projects/[name]/page.tsx # Project detail (all sessions in project)
-│   │   └── api/search/route.ts     # Search API
-│   ├── components/
-│   │   ├── Sidebar.tsx           # Tree navigation (projects + timeline)
-│   │   └── SearchBar.tsx         # Persistent search bar
-│   └── lib/
-│       ├── data.ts               # Data loading layer
-│       └── format.ts             # Shared formatting utilities
-├── scripts/
-│   ├── scan_sessions.py          # Main scanner (summaries, titles, classification)
-│   ├── generate_index.py         # Wiki index generator
-│   ├── memory-wiki-backup.sh     # Backup script
-│   ├── memory-wiki-restore.sh    # Restore script
-│   ├── rescan.sh                 # Convenience rescan
-│   └── install.sh                # One-click installer
-├── data/                         # Generated data (auto-scanned)
-│   ├── sessions/                 # Individual session JSONs
-│   ├── sessions.json             # Session metadata index
-│   ├── projects.json             # Project groupings
-│   ├── daily_logs.json           # Daily logs
-│   └── wiki-index.json           # Compact index for context skill
-├── public/                       # Static assets
-├── package.json
-├── tsconfig.json
-├── next.config.ts
-├── tailwind.config.ts
-├── postcss.config.mjs
-├── eslint.config.mjs
-├── .env.example
-├── .gitignore
-├── LICENSE
-└── README.md
-```
-
-## Use Cases
-
-### 🔄 Never Repeat Yourself
-Start a new session and immediately get context about what you've already done. No more re-explaining your project structure, preferences, or past decisions.
-
-### 📋 Project Continuity
-Work on a project across multiple sessions with full awareness of what was accomplished previously. The wiki tracks outcomes, not just conversations.
-
-### 🔍 Search Past Work
-Can't remember when you discussed something? Full-text search across all sessions with results showing title, summary, date, and project.
-
-### 📊 Understand Your Patterns
-The project classification shows you where you spend your time. Daily logs show your work patterns over time.
-
-### 🔀 Session Recovery
-Hermes sessions can be lost or compressed. The wiki preserves the full transcript and narrative summary permanently.
-
-### 🤖 Multi-Agent Alignment
-If you use multiple Hermes profiles or agents, the wiki provides a shared memory layer that keeps everyone aligned.
-
-## Best Practices
-
-### Let It Run Automatically
-The system is designed to be zero-maintenance. The auto-scan cron runs every hour, the launch agent keeps the server running, and backups happen daily. You don't need to do anything.
-
-### Run Rescan After Big Sessions
-If you've had a long, productive session and want it in the wiki immediately:
-```bash
-memory-wiki rescan
-```
-
-### Backup & Restore
-
-**Backups** are created daily at 2:00 AM and stored in `~/memory-wiki-backups/` as timestamped tarballs (e.g., `memory-wiki-backup_20260526_180854.tar.gz`). Each backup is ~10-15MB. Only the last 10 backups are kept.
-
-A backup includes:
-- All session data (transcripts, summaries, project classifications)
-- Hermes `state.db` (the source of conversation history)
-- Launch agent and skill configurations
-- Wiki app source code and configs
-
-**To restore** on the same or a new machine:
-```bash
-memory-wiki restore memory-wiki-backup_20260526_180854.tar.gz
-```
-
-The restore script handles everything: installs dependencies, restores data, merges conversation history into the existing `state.db`, reinstalls the launch agent and skill.
-
-Run a manual backup anytime:
-```bash
-memory-wiki backup
-```
-
-### Customize Project Classification
-Edit `scripts/scan_sessions.py` → `PROJECTS` list to add your own project categories and keywords. The classifier uses keyword matching against session titles and first user messages.
-
-### Port Conflicts
-If port 9876 is already in use, edit the launch agent plist:
-```bash
-# Change -p 9876 to your desired port in:
-~/Library/LaunchAgents/com.memory-wiki.plist
-# Then reload:
-launchctl unload ~/Library/LaunchAgents/com.memory-wiki.plist
-launchctl load ~/Library/LaunchAgents/com.memory-wiki.plist
-```
 
 ## CLI Reference
 
@@ -299,43 +281,158 @@ memory-wiki stop        # Stop the wiki server
 memory-wiki restart     # Restart the wiki server
 memory-wiki open        # Open in browser
 memory-wiki rescan      # Manually scan new sessions
+memory-wiki upgrade     # Pull latest scripts from GitHub
 memory-wiki backup      # Create backup tarball
 memory-wiki restore <f> # Restore from backup file
+memory-wiki uninstall   # Remove everything (or: bash scripts/uninstall.sh)
 ```
+
+## How Context Injection Works
+
+The magic happens through a Hermes skill that runs silently at the start of every new session.
+
+### Step 1: Skill Reads Index
+The skill reads `data/wiki-index.json` (~15KB) — a compact index of projects, sessions, facts, and decisions.
+
+### Step 2: Relevance Detection
+It matches your message against project names, descriptions, and keywords:
+- "resume" / "cv" / "cover letter" → Documents & Writing
+- "website" / "blog" / "portfolio" → Website projects
+- "memory wiki" / "wiki" → Memory Wiki itself
+- "youtube" / "video" / "shorts" → Video content
+- "career" / "job" / "company" → Job search
+- "config" / "setup" / "install" → Hermes/tool configuration
+- "telegram" / "bot" → Messaging bots
+- "github" / "repo" → Repository work
+
+### Step 3: Injection (Only If Relevant)
+
+**If there's a match**, injects a compact context block (~100-150 words):
+
+```
+📚 Previous Work: Personal Website
+Building a portfolio site with Next.js 15, Tailwind CSS, deployed to Vercel.
+Dark theme with emerald accent. Structure: Home, About, Projects, Blog.
+Key facts: Vercel deployment, prefers concise API responses.
+Decision: Use Astro instead of Next.js for better performance (May 28).
+Last worked: 2026-05-28.
+```
+
+**If no match**, stays silent — zero token overhead.
+
+### Step 4: You Get Continuity
+Hermes now knows what you built, what you decided, and where things left off. No re-explaining. No contradictory suggestions.
+
+## Features Deep-Dive
+
+### 📖 Browsable Session Archive
+- **Session detail pages** with AI-generated narrative summaries and full transcripts
+- **Project grouping** — sessions auto-classified into meaningful work areas
+- **Daily timeline** — browse sessions by day
+- **Facts & Decisions pages** — browse extracted knowledge
+- **Full-text search** across all conversations
+- **Dark theme** optimized for long reading sessions
+
+### 🧠 Three-Layer Memory
+
+| Layer | File | Update | Supersedence |
+|-------|------|--------|--------------|
+| **Facts** | `facts.json` | Extracted from session summaries | Old facts superseded (not deleted) |
+| **Decisions** | `decisions.json` | Extracted from user choices | Full trail: what replaced what and when |
+| **Summaries** | `wiki-index.json` | LLM narrative per session | Auto-title + project classification |
+
+### ⚡ Auto-Scan Pipeline
+- **Every hour**: Hermes cron job scans for new/changed sessions
+- **LLM summarization**: Single `hermes -z` call per session with parallel workers
+- **Incremental**: Only new sessions processed; already-summarized ones skipped
+- **Cron separation**: Auto-scan sessions tracked separately, not mixed with real work
+- **Daily backup**: Full backup at 2 AM, keeps last 10 backups
+
+### 🔧 Zero Maintenance
+- Launch agent keeps the server running (auto-start on login, auto-restart on crash)
+- Cron jobs handle scanning and backups automatically
+- CLI commands for manual control when needed
+- Backup/restore for disaster recovery
 
 ## Configuration
 
 ### Environment Variables
-Copy `.env.example` to `.env` and adjust:
+Copy `.env.example` to `.env`:
+```bash
+HERMES_STATE_DB=~/.hermes/state.db   # Path to Hermes state.db
+PORT=9876                             # Wiki server port
+```
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HERMES_STATE_DB` | `~/.hermes/state.db` | Path to Hermes state.db |
-| `PORT` | `9876` | Wiki server port |
+### Adding Custom Project Categories
+Edit `scripts/scan_sessions.py` → `PROJECTS` list:
+```python
+PROJECTS = [
+    {
+        "name": "Your Project Name",
+        "emoji": "🔥",
+        "description": "What this project is about",
+        "keywords": ["keyword1", "keyword2", "keyword3"],
+    },
+    # ... add more
+]
+```
+The classifier matches against session titles and first user messages.
 
-### Hermes Cron Jobs
+### Hermes Cron Jobs (Auto-Configured)
 | Job | Schedule | Purpose |
 |-----|----------|---------|
 | Memory Wiki Auto-Scan | Every 1 hour | Scans new sessions, generates summaries |
 | Memory Wiki Daily Backup | Daily at 2:00 AM | Creates backup tarball |
+| Daily Priority Check-in | Daily at 9:00 AM | Asks for daily priority (optional) |
 
 View all cron jobs:
 ```bash
 hermes cron list
 ```
 
-### Launch Agent
-The wiki server runs as a macOS launch agent (`com.memory-wiki`):
-- `RunAtLoad: true` — starts on login
-- `KeepAlive: true` — auto-restarts if it crashes
+### Port Conflicts
+If port 9876 is in use:
+```bash
+# Change -p 9876 in ~/Library/LaunchAgents/com.memory-wiki.plist
+launchctl unload ~/Library/LaunchAgents/com.memory-wiki.plist
+launchctl load ~/Library/LaunchAgents/com.memory-wiki.plist
+```
 
-## Requirements
+## Uninstall
 
-- **macOS** (launch agent support)
-- **Hermes Agent** ([install](https://hermes-agent.nousresearch.com))
-- **Node.js** v18+ ([install](https://nodejs.org))
-- **Python** v3.8+ (stdlib only, no pip packages needed)
-- **Git** (for cloning)
+Completely remove Hermes Memory Wiki:
+
+```bash
+cd ~/workspace/hermes-memory-wiki
+bash scripts/uninstall.sh
+```
+
+The uninstaller will:
+1. ✅ Stop the wiki server and unload the launch agent
+2. ✅ Remove the launch agent plist
+3. ✅ Remove Hermes cron jobs (auto-scan, backup, priority check-in)
+4. ✅ Remove the `memory-wiki` CLI
+5. ✅ Remove the wiki-context skill
+6. ✅ Remove the wiki directory (`~/workspace/hermes-memory-wiki`)
+7. ✅ Optionally remove backups (`~/memory-wiki-backups/`)
+
+**Note:** Your Hermes conversation data in `~/.hermes/state.db` is never touched.
+
+## Backup & Restore
+
+**Backups** are created daily at 2:00 AM → `~/memory-wiki-backups/` as timestamped tarballs.
+
+Includes: all session data, Hermes state.db, launch agent and skill configs, wiki source code.
+
+**Restore** on the same or new machine:
+```bash
+memory-wiki restore memory-wiki-backup_20260528_020000.tar.gz
+```
+
+Manual backup anytime:
+```bash
+memory-wiki backup
+```
 
 ## Troubleshooting
 
@@ -343,34 +440,38 @@ The wiki server runs as a macOS launch agent (`com.memory-wiki`):
 ```bash
 memory-wiki status
 memory-wiki restart
-# Check logs:
 cat ~/workspace/hermes-memory-wiki/.server-error.log
 ```
 
-**Sessions not appearing:**
+**Sessions not appearing in wiki:**
 ```bash
 memory-wiki rescan
 ```
 
 **Context not injecting in new sessions:**
-- Ensure `data/wiki-index.json` exists and is recent
-- Run `memory-wiki rescan` to regenerate
-- Check skill file: `~/.hermes/skills/hermes-memory-wiki/SKILL.md`
-
-**Port 9876 in use:**
 ```bash
-lsof -i :9876
-kill <PID>
-memory-wiki restart
+# Verify wiki index exists and is recent
+ls -la ~/workspace/hermes-memory-wiki/data/wiki-index.json
+memory-wiki rescan
+# Check skill file
+cat ~/.hermes/skills/hermes-memory-wiki/SKILL.md
 ```
+
+## Requirements
+
+- **macOS** (launch agent support)
+- **Hermes Agent** ([install](https://hermes-agent.nousresearch.com))
+- **Node.js** v18+ ([install](https://nodejs.org))
+- **Python** v3.8+ (stdlib only)
+- **Git** (for cloning)
 
 ## Contributing
 
 Contributions welcome! Areas of interest:
 - Additional project classification keywords
-- Enhanced summary generation
-- Alternative frontend themes
 - Windows/Linux support (currently macOS-only)
+- Enhanced summary generation strategies
+- Alternative frontend themes
 
 ## License
 

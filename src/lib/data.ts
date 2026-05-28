@@ -4,6 +4,8 @@ import path from "path";
 const DATA_DIR = path.join(process.cwd(), "data");
 const SESSIONS_DIR = path.join(DATA_DIR, "sessions");
 
+// ── Interfaces ──────────────────────────────────────────────────────────
+
 export interface SessionMeta {
   id: string;
   title: string;
@@ -61,6 +63,68 @@ export interface SearchResult {
   project: string;
 }
 
+// ── Facts Layer ──────────────────────────────────────────────────────────
+
+export interface Fact {
+  id: string;
+  fact: string;
+  category: string;
+  source_session: string | null;
+  created: string | null;
+  status: "active" | "superseded";
+  superseded_by?: string;
+}
+
+export interface FactsData {
+  version: string;
+  generated: string | null;
+  facts: Fact[];
+}
+
+// ── Decisions Layer ──────────────────────────────────────────────────────
+
+export interface Decision {
+  id: string;
+  decision: string;
+  category: string;
+  source_session: string | null;
+  created: string | null;
+  status: "active" | "superseded";
+  superseded_by?: string;
+  superseded_in_session?: string;
+  reason?: string;
+}
+
+export interface DecisionsData {
+  version: string;
+  generated: string | null;
+  decisions: Decision[];
+}
+
+// ── Cron Job Categories ──────────────────────────────────────────────────
+
+export interface CronJobMeta {
+  id: string;
+  name: string;
+  schedule: string;
+  last_run: string | null;
+  status: "ok" | "error" | "pending";
+  category: string;
+}
+
+// ── Cron Jobs ────────────────────────────────────────────────────────────
+
+export interface CronJob {
+  id: string;
+  title: string;
+  category: string;
+  started_at: string | null;
+  date: string | null;
+  message_count: number;
+}
+
+// ── Data Loading ─────────────────────────────────────────────────────────
+
 async function readJSON<T>(filePath: string): Promise<T | null> {
   try {
     const raw = await fs.readFile(filePath, "utf-8");
@@ -75,16 +139,6 @@ export async function getSessions(): Promise<SessionMeta[]> {
   return data ?? [];
 }
 
-export async function getProjects(): Promise<Project[]> {
-  const data = await readJSON<Project[]>(path.join(DATA_DIR, "projects.json"));
-  return data ?? [];
-}
-
-export async function getDailyLogs(): Promise<DailyLog[]> {
-  const data = await readJSON<DailyLog[]>(path.join(DATA_DIR, "daily_logs.json"));
-  return data ?? [];
-}
-
 export async function getSession(id: string): Promise<SessionDetail | null> {
   try {
     return await readJSON<SessionDetail>(path.join(SESSIONS_DIR, `${id}.json`));
@@ -93,9 +147,19 @@ export async function getSession(id: string): Promise<SessionDetail | null> {
   }
 }
 
+export async function getProjects(): Promise<Project[]> {
+  const data = await readJSON<Project[]>(path.join(DATA_DIR, "projects.json"));
+  return data ?? [];
+}
+
 export async function getProject(name: string): Promise<Project | null> {
   const projects = await getProjects();
   return projects.find((p) => p.name === decodeURIComponent(name)) ?? null;
+}
+
+export async function getDailyLogs(): Promise<DailyLog[]> {
+  const data = await readJSON<DailyLog[]>(path.join(DATA_DIR, "daily_logs.json"));
+  return data ?? [];
 }
 
 export async function getDailyLog(date: string): Promise<DailyLogDetail | null> {
@@ -111,6 +175,16 @@ export async function getDailyLog(date: string): Promise<DailyLogDetail | null> 
     )
   ).filter((s): s is SessionDetail => s !== null);
   return { ...log, sessions };
+}
+
+export async function getFacts(): Promise<FactsData> {
+  const data = await readJSON<FactsData>(path.join(DATA_DIR, "facts.json"));
+  return data ?? { version: "1.0", generated: null, facts: [] };
+}
+
+export async function getDecisions(): Promise<DecisionsData> {
+  const data = await readJSON<DecisionsData>(path.join(DATA_DIR, "decisions.json"));
+  return data ?? { version: "1.0", generated: null, decisions: [] };
 }
 
 export async function searchAll(query: string): Promise<SearchResult[]> {
@@ -148,4 +222,9 @@ export async function searchAll(query: string): Promise<SearchResult[]> {
 
   results.sort((a, b) => b.score - a.score);
   return results;
+}
+
+export async function getCronJobs(): Promise<CronJob[]> {
+  const data = await readJSON<{ cron_jobs: CronJob[] }>(path.join(DATA_DIR, "cron-jobs.json"));
+  return data?.cron_jobs ?? [];
 }

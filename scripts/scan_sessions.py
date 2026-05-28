@@ -1,33 +1,40 @@
 #!/usr/bin/env python3
 """
 scan_sessions.py - Extracts session data from Hermes state.db
-and generates JSON files for the Memory Wiki.
+and generates JSON files for the Hermes Memory Wiki.
 
-Version: 2.1
+Version: 2.5
 Changelog:
+  2.5 - Facts layer (facts.json) with auto-categorization
+         Decisions layer (decisions.json) with supersedence trail
+         Cron job classification (auto_scan, backup, priority_check)
+         Parallel LLM processing (3 workers)
+         Incremental scanning + date filter (days_back)
+         Narrative session summaries (no bullets)
+         Facts & Decisions pages with dynamic rendering
   2.1 - Skip cron sessions, short sessions (< 3 msgs), scanner self-sessions
-      - Tightened Memory Wiki project keywords to prevent over-classification
-  2.0 - Multi-pass dialectic reasoning (Extract -> Reason -> Synthesize)
-  1.0 - Initial release with heuristic narrative summaries
-"""
+       - Tightened Memory Wiki project keywords
+  2.0 - Multi-pass dialectic reasoning
+
 Outputs:
-  data/sessions.json      - all sessions with metadata
+  data/sessions.json      - all sessions with metadata + LLM summaries
   data/projects.json     - sessions grouped into projects/work-areas
-  data/daily_logs.json    - sessions grouped by day
-  data/sessions/*.json    - full message content per session
+  data/daily_logs.json   - sessions grouped by day
+  data/facts.json        - deduplicated facts extracted from sessions
+  data/decisions.json    - decisions with supersedence trail
+  data/sessions/*.json   - full message content per session
 
 Usage:
-  python3 scan_sessions.py              # scan only
-  python3 scan_sessions.py --summarize  # scan + generate narrative summaries
+  python3 scan_sessions.py    # scan + LLM summaries for all
 """
 
 import sqlite3
 import json
 import os
 import re
-import sys
 import subprocess
-import concurrent.futures
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from collections import defaultdict
 from pathlib import Path
@@ -36,37 +43,50 @@ DB_PATH = os.path.expanduser("~/.hermes/state.db")
 OUT_DIR = Path(__file__).parent.parent / "data"
 SESSIONS_DIR = OUT_DIR / "sessions"
 
+# ── Cron job classification ─────────────────────────────────────────────
+CRON_CATEGORIES = {
+    "auto_scan": ["scan", "auto-scan", "session scan", "wiki scan"],
+    "backup": ["backup", "daily backup", "wiki backup"],
+    "priority_check": ["priority", "check-in", "daily priority"],
+}
+
+def classify_cron_job(title, messages_text):
+    text = (title + " " + messages_text).lower()
+    for category, keywords in CRON_CATEGORIES.items():
+        for kw in keywords:
+            if kw in text:
+                return category
+    return "other"
+
 # ── Project classification ──────────────────────────────────────────────
-# Each project has a name, description, and keyword triggers that indicate
-# a session belongs to it. Order matters - first match wins.
 PROJECTS = [
     {
         "name": "Memory Wiki",
         "emoji": "⚡",
-        "description": "Building and improving the Memory Wiki ecosystem",
+        "description": "Building and improving the Hermes Memory Wiki ecosystem",
         "keywords": ["memory-wiki", "scan_sessions", "memory wiki site",
                      "memory wiki server", "memory wiki ecosystem"],
     },
     {
         "name": "Personal Website",
         "emoji": "🌐",
-        "description": "Building and maintaining a personal website or portfolio",
+        "description": "Building and maintaining a personal website",
         "keywords": ["personal website", "portfolio", "next.js", "tailwind",
                      "vercel", "framer motion", "shadcn", "blog"],
     },
     {
         "name": "Documents & Writing",
         "emoji": "📄",
-        "description": "Creating, editing, and managing documents, PDFs, and written content",
+        "description": "Creating, editing, and managing documents and written content",
         "keywords": ["resume", "cover letter", "cv", "document", "pdf", "writing",
                      "template", "generator", "nano-pdf", "ocr"],
     },
     {
         "name": "Career Research",
         "emoji": "🔍",
-        "description": "Company research, job search strategy, and application automation",
-        "keywords": ["career research", "target companies", "job search", "applying to roles",
-                     "career research assistant", "qualified prioritized list"],
+        "description": "Company research, job search strategy, and applications",
+        "keywords": ["career research", "target companies", "job search",
+                     "applying to roles", "interview prep"],
     },
     {
         "name": "YouTube & Video",
@@ -79,34 +99,32 @@ PROJECTS = [
         "name": "GitHub & Repo Management",
         "emoji": "🐙",
         "description": "GitHub repository review, licensing, and CI/CD automation",
-        "keywords": ["github", "gh cli", "pull request", "github actions", "license file",
-                     "repo review", "open source"],
+        "keywords": ["github", "gh cli", "pull request", "github actions",
+                     "license file", "repo review", "open source"],
     },
     {
         "name": "Hermes Configuration",
         "emoji": "⚙️",
         "description": "Setting up and configuring Hermes agent, models, and tools",
         "keywords": ["hermes config", "hermes setup", "gateway", "model", "provider",
-                     "openrouter", "personality", "toolsets", "hermes kickoff"],
+                     "openrouter", "personality", "toolsets"],
     },
     {
         "name": "Telegram Bot",
         "emoji": "✈️",
         "description": "Setting up and using the Telegram bot integration",
-        "keywords": ["telegram", "telegram bot", "telegram group", "add you to a group",
-                     "bot token"],
+        "keywords": ["telegram", "telegram bot", "telegram group", "bot token"],
     },
     {
         "name": "MCP Servers",
         "emoji": "🔌",
-        "description": "Connecting and configuring MCP servers (Zapier, Gmail, etc.)",
-        "keywords": ["mcp server", "mcp", "zapier", "gmail mcp", "config.yaml mcp",
-                     "native-mcp"],
+        "description": "Connecting and configuring MCP servers",
+        "keywords": ["mcp server", "mcp", "zapier", "gmail mcp", "native-mcp"],
     },
     {
         "name": "AI Agents & Multi-Agent",
         "emoji": "🤖",
-        "description": "Creating multiple agents, autonomous agents, and agent orchestration",
+        "description": "Creating multiple agents, autonomous agents, and orchestration",
         "keywords": ["multiple agents", "autonomous agent", "agent orchestration",
                      "subagent", "delegate_task", "kanban orchestrator"],
     },
@@ -121,11 +139,15 @@ PROJECTS = [
         "name": "Greetings & Casual",
         "emoji": "👋",
         "description": "Quick greetings, check-ins, and casual conversations",
-        "keywords": [],  # fallback - short sessions with no other match
+        "keywords": [],
         "is_default": True,
     },
 ]
 
+FACT_CATEGORIES = ["environment", "preferences", "tools", "conventions", "constraints"]
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────
 
 def ts_to_dt(ts):
     if not ts:
@@ -135,7 +157,6 @@ def ts_to_dt(ts):
     except (OSError, ValueError, OverflowError):
         return None
 
-
 def ts_to_date(ts):
     if not ts:
         return None
@@ -144,38 +165,11 @@ def ts_to_date(ts):
     except (OSError, ValueError, OverflowError):
         return None
 
-
-def classify_project(title, user_messages, assistant_messages):
-    """Classify a session into a project based on content."""
-    all_text = (title or "") + " "
-    all_text += " ".join(user_messages[:10]) + " "
-    all_text += " ".join(assistant_messages[:5])
-    all_text = all_text.lower()
-
-    for project in PROJECTS:
-        if project.get("is_default"):
-            continue
-        for kw in project["keywords"]:
-            if kw in all_text:
-                return project
-
-    # Default: short sessions with no clear topic → Greetings
-    if len(user_messages) <= 2 and len(all_text) < 200:
-        return next(p for p in PROJECTS if p.get("is_default"))
-
-    return None
-
-
-def run_hermes_prompt(prompt, max_chars=3000):
-    """
-    Run a prompt through hermes CLI and return the response.
-    Falls back to empty string if hermes is not available or fails.
-    Uses a single call with multi-pass instructions to avoid N× subprocess overhead.
-    """
+def run_hermes_prompt(prompt, max_chars=4000):
     try:
         result = subprocess.run(
             ["hermes", "-z", prompt],
-            capture_output=True, text=True, timeout=90
+            capture_output=True, text=True, timeout=120
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()[:max_chars]
@@ -183,150 +177,21 @@ def run_hermes_prompt(prompt, max_chars=3000):
         pass
     return ""
 
-
-def generate_dialectic_summary(messages, title, project_name, previous_summaries=None):
-    """
-    Generate a multi-pass dialectic summary using a single LLM call.
-
-    The prompt asks the LLM to run 3 reasoning passes internally:
-    Pass 1 - Extract: What was asked, done, decided, accomplished.
-    Pass 2 - Reason: What patterns and preferences emerge? What context
-             matters most for future sessions on this topic?
-    Pass 3 - Synthesize: A concise paragraph optimized for context injection.
-
-    Returns a dict with 'narrative' (fallback heuristic), 'reasoning' (pass 2),
-    'context' (pass 3), and 'pass1' (pass 1).
-    """
-    user_msgs = [m for m in messages if m["role"] == "user"]
-    assistant_msgs = [m for m in messages if m["role"] == "assistant"]
-    tool_msgs = [m for m in messages if m["role"] == "tool"]
-
-    if not user_msgs:
-        return {
-            "narrative": "No conversation content in this session.",
-            "reasoning": "",
-            "context": "",
-            "pass1": "",
-            "pass2": "",
-        }
-
-    def clean_text(text, max_len=200):
-        text = re.sub(r'##.*?\n', '', text)
-        text = re.sub(r'\[System note:.*?\]', '', text)
-        text = re.sub(r'>.*?\n', '', text)
-        text = re.sub(r'#+\s*', '', text)
-        text = text.replace('\n', ' ').strip()
-        text = re.sub(r'\s+', ' ', text)
-        if len(text) > max_len:
-            text = text[:max_len] + "…"
-        return text
-
-    # Build a compact conversation excerpt - first 3 user + first 2 assistant messages
-    excerpt_parts = []
-    for m in (user_msgs[:3] + assistant_msgs[:2]):
-        role = "User" if m["role"] == "user" else "Assistant"
-        content = clean_text(m["content"], 500)
-        if content:
-            excerpt_parts.append(f"{role}: {content}")
-    excerpt = "\n".join(excerpt_parts)
-
-    tools_used = list(set(m["tool_name"] for m in tool_msgs if m["tool_name"]))
-    tools_str = ", ".join(tools_used[:5]) if tools_used else "none"
-
-    # Build previous session context for cross-referencing
-    prev_context = ""
-    if previous_summaries:
-        prev_snippets = []
-        for s in previous_summaries[:5]:
-            ctx = s.get("context") or s.get("pass1") or s.get("summary", "") or ""
-            if ctx:
-                # Take first sentence only to keep compact
-                first_sent = re.split(r'(?<=[.!?])\s+', ctx)[0]
-                prev_snippets.append(first_sent[:200])
-        if prev_snippets:
-            prev_context = "\n".join(prev_snippets)
-
-    # Single prompt that asks for all 3 passes in structured output
-    dialectic_prompt = f"""Analyze this conversation session through 3 reasoning passes. Output in this exact format:
-
----PASS1---
-[3-5 sentences: What was asked, done, decided, and accomplished. Third person, factual.]
-
----PASS2---
-[2-3 sentences: What patterns, preferences, or setup choices should be remembered for future sessions on this topic? Focus on actionable context.]
-
----PASS3---
-[One paragraph, 4-6 sentences: A rich context summary for an AI assistant. Cover what was accomplished, key decisions/preferences, where things left off, and important technical details (paths, tools, configs). Third person, factual, optimized for context injection.]
-
-Session title: {title}
-Project: {project_name}
-Tools used: {tools_str}
-{"Previous session context from same project:" if prev_context else ""}
-{prev_context}
-
-Conversation excerpt:
-{excerpt}
-
-Now run all 3 passes. Do not include any other text."""
-
-    result = run_hermes_prompt(dialectic_prompt, max_chars=4000)
-
-    # Parse the structured output
-    pass1 = pass2 = pass3 = ""
-    if result:
-        # Extract each pass section
-        for tag, target in [("---PASS1---", "pass1"), ("---PASS2---", "pass2"), ("---PASS3---", "pass3")]:
-            start = result.find(tag)
-            if start >= 0:
-                start += len(tag)
-                # Find next tag or end of string
-                end = len(result)
-                for next_tag in ["---PASS1---", "---PASS2---", "---PASS3---"]:
-                    if next_tag != tag:
-                        next_pos = result.find(next_tag, start)
-                        if next_pos >= 0 and next_pos < end:
-                            end = next_pos
-                text = result[start:end].strip()
-                if target == "pass1":
-                    pass1 = text
-                elif target == "pass2":
-                    pass2 = text
-                elif target == "pass3":
-                    pass3 = text
-
-    # Fallback narrative (heuristic, no LLM needed)
-    narrative_lines = []
-    first_user = clean_text(user_msgs[0]["content"], 250)
-    for prefix in [
-        "i want to ", "i'd like to ", "can you ", "please ", "hey ", "hi ",
-        "hello ", "ok ", "yes ", "i need to ", "help me ", "let's ", "i am ",
-    ]:
-        if first_user.lower().startswith(prefix):
-            first_user = first_user[len(prefix):]
-            break
-    first_user = first_user.strip()
-    if first_user:
-        first_user = first_user[0].upper() + first_user[1:]
-        if not first_user[-1] in ".!?":
-            first_user += "."
-        narrative_lines.append(f"The user asked about {first_user[0].lower()}{first_user[1:]}")
-    narrative = " ".join(narrative_lines) if narrative_lines else f"Session about {title or project_name}."
-
-    return {
-        "narrative": narrative,
-        "reasoning": pass2,
-        "context": pass3 or pass1,
-        "pass1": pass1,
-        "pass2": pass2,
-    }
-
+def clean_text(text, max_len=200):
+    text = re.sub(r'##.*?\n', '', text)
+    text = re.sub(r'\[System note:.*?\]', '', text)
+    text = re.sub(r'>.*?\n', '', text)
+    text = re.sub(r'#+\s*', '', text)
+    text = text.replace('\n', ' ').strip()
+    text = re.sub(r'\s+', ' ', text)
+    if len(text) > max_len:
+        text = text[:max_len] + "..."
+    return text
 
 def get_session_messages(conn, session_id):
     cur = conn.execute(
-        """SELECT role, content, tool_name, timestamp 
-           FROM messages 
-           WHERE session_id = ? 
-           ORDER BY timestamp ASC""",
+        """SELECT role, content, tool_name, timestamp
+           FROM messages WHERE session_id = ? ORDER BY timestamp ASC""",
         (session_id,)
     )
     messages = []
@@ -342,54 +207,238 @@ def get_session_messages(conn, session_id):
         })
     return messages
 
+def classify_project(title, user_messages, assistant_messages):
+    all_text = (title or "") + " "
+    all_text += " ".join(user_messages[:10]) + " "
+    all_text += " ".join(assistant_messages[:5])
+    all_text = all_text.lower()
+    for project in PROJECTS:
+        if project.get("is_default"):
+            continue
+        for kw in project["keywords"]:
+            if kw in all_text:
+                return project
+    if len(user_messages) <= 2 and len(all_text) < 200:
+        return next(p for p in PROJECTS if p.get("is_default"))
+    return None
 
-def generate_auto_title(messages, existing_title, project_name):
-    """Generate a descriptive title from the first user message."""
-    user_msgs = [m["content"] for m in messages if m["role"] == "user"]
+def classify_fact_category(fact_text):
+    text = fact_text.lower()
+    scores = {
+        "environment": sum(1 for k in ["macos", "linux", "windows", "ubuntu", "machine", "computer", "device", "hardware"] if k in text),
+        "tools": sum(1 for k in ["python", "node", "react", "docker", "tool", "library", "framework", "package", "cli"] if k in text),
+        "conventions": sum(1 for k in ["convention", "pattern", "style", "always", "never", "should", "must", "rule", "format"] if k in text),
+        "constraints": sum(1 for k in ["limit", "cannot", "can't", "avoid", "bound", "capped", "max", "min"] if k in text),
+        "preferences": sum(1 for k in ["prefer", "like", "rather", "choose", "want", "favorite"] if k in text),
+    }
+    best = max(scores, key=lambda k: scores[k])
+    return best if scores[best] > 0 else "preferences"
+
+
+# ── LLM summarization ───────────────────────────────────────────────────
+
+def llm_summarize(messages, title, project_name):
+    """Generate a complete session summary + title + facts + decisions via LLM.
+
+    Returns dict with:
+      - summary: Narrative paragraph (what happened, outcomes, takeaways)
+      - title: LLM-generated descriptive title
+      - facts: list of {fact, category}
+      - decisions: list of decision strings
+    """
+    user_msgs = [m for m in messages if m["role"] == "user"]
+    assistant_msgs = [m for m in messages if m["role"] == "assistant"]
+    tool_msgs = [m for m in messages if m["role"] == "tool"]
+
     if not user_msgs:
-        return existing_title or "(untitled)"
+        return {
+            "summary": "No conversation content in this session.",
+            "title": title or "(untitled)",
+            "facts": [],
+            "decisions": [],
+        }
 
-    first_msg = user_msgs[0].strip()
+    # Build compact excerpt - first 2 user + first 2 assistant messages, truncated
+    excerpt_parts = []
+    for m in (user_msgs[:2] + assistant_msgs[:2]):
+        role = "User" if m["role"] == "user" else "Assistant"
+        content = clean_text(m["content"], 250)
+        if content:
+            excerpt_parts.append(f"{role}: {content}")
+    excerpt = "\n".join(excerpt_parts)
 
-    # Remove common prefixes
-    clean = first_msg
-    for prefix in [
-        "i want to ", "i'd like to ", "can you ", "please ", "hey ", "hi ",
-        "hello ", "ok ", "yes ", "i need to ", "help me ", "let's ",
-    ]:
-        if clean.lower().startswith(prefix):
-            clean = clean[len(prefix):]
-            break
+    tools_used = list(set(m["tool_name"] for m in tool_msgs if m["tool_name"]))
+    tools_str = ", ".join(tools_used[:5]) if tools_used else "none"
 
-    # Take first sentence or first 80 chars
-    for delim in [".", "!", "?"]:
-        idx = clean.find(delim)
-        if 10 < idx < 80:
-            clean = clean[:idx]
-            break
-    clean = clean[:80].strip()
+    prompt = f"""Analyze this conversation session and provide a structured summary.
 
-    if clean and len(clean) > 5:
-        return clean[0].upper() + clean[1:]
-    return existing_title or "(untitled)"
+Project: {project_name}
+Tools used: {tools_str}
+
+Conversation excerpt:
+{excerpt}
+
+Provide output in this exact format:
+
+---SUMMARY---
+[3-4 sentence narrative: What was the session about? What did the user ask? What was built/done? Key takeaways? Third person, factual.]
+
+---TITLE---
+[Short descriptive title, 4-8 words, no punctuation]
+
+---FACTS---
+[One fact per line, format: fact text | category]
+[Categories: environment, preferences, tools, conventions, constraints]
+[Only clear factual statements, 0-5 facts]
+
+---DECISIONS---
+- [One decision per line]
+- [Only decisions made by the USER. What did the user decide, choose, or want? Do NOT include decisions or actions taken by the assistant.]
+- [0-5 decisions]"""
+
+    result = run_hermes_prompt(prompt, max_chars=4000)
+
+    if not result:
+        # Fallback: heuristic
+        first_q = user_msgs[0]["content"].strip()[:120]
+        return {
+            "summary": f"The user asked about {first_q}",
+            "title": first_q[:60],
+            "facts": [],
+            "decisions": [],
+        }
+
+    # Parse sections
+    def extract_section(text, tag):
+        start = text.find(tag)
+        if start < 0:
+            return ""
+        start += len(tag)
+        end = len(text)
+        all_tags = ["---SUMMARY---", "---TITLE---", "---FACTS---", "---DECISIONS---"]
+        for next_tag in all_tags:
+            if next_tag != tag:
+                pos = text.find(next_tag, start)
+                if pos >= 0 and pos < end:
+                    end = pos
+        return text[start:end].strip()
+
+    summary_section = extract_section(result, "---SUMMARY---")
+    title_section = extract_section(result, "---TITLE---")
+    facts_section = extract_section(result, "---FACTS---")
+    decisions_section = extract_section(result, "---DECISIONS---")
+
+    # Parse facts
+    facts = []
+    if facts_section:
+        for line in facts_section.split("\n"):
+            line = line.strip()
+            # Skip empty lines, bracketed instructions, and delimiter artifacts
+            if not line or line.startswith("[") or line.startswith("---") or line.startswith("Only "):
+                continue
+            # Skip lines that are clearly LLM prompt artifacts
+            if any(k in line.lower() for k in ["categories:", "one fact per line", "0-5 facts", "fact text | category"]):
+                continue
+            fact_text = line
+            cat = "preferences"
+            if "|" in line:
+                parts = line.rsplit("|", 1)
+                fact_text = parts[0].strip().strip("[] ")
+                cat_raw = parts[1].strip().strip("[] ").lower()
+                if cat_raw in FACT_CATEGORIES:
+                    cat = cat_raw
+                else:
+                    cat = classify_fact_category(fact_text)
+            else:
+                cat = classify_fact_category(fact_text)
+            # Skip meta/analytic sentences about the session itself
+            if any(k in fact_text.lower() for k in [
+                "the user requested", "the user asked", "the assistant", "this session",
+                "the conversation", "no actual work", "no files were", "the task was",
+                "the excerpt", "the point of summary", "the interaction was",
+                "the user sent", "there were no", "the rules specified"
+            ]):
+                continue
+            if fact_text and len(fact_text) > 10 and len(fact_text) < 200:
+                facts.append({"fact": fact_text, "category": cat})
+
+    # Parse decisions
+    decisions = []
+    if decisions_section:
+        for line in decisions_section.split("\n"):
+            line = line.strip().lstrip("- ").strip()
+            if line and len(line) > 5 and not line.startswith("["):
+                decisions.append(line)
+
+    return {
+        "summary": summary_section or f"Session about {project_name}.",
+        "title": title_section.strip() if title_section.strip() else (title or "(untitled)"),
+        "facts": facts,
+        "decisions": decisions,
+    }
 
 
-def scan(summarize=False):
+# ── Fact/Decision deduplication ──────────────────────────────────────────
+
+def merge_facts(accumulated, new_facts, session_id):
+    for item in new_facts:
+        fact_text = item["fact"]
+        category = item.get("category", "preferences")
+        key = re.sub(r'\s+', ' ', fact_text.lower().strip())[:80]
+        if key in accumulated:
+            if session_id not in accumulated[key].get("sessions", []):
+                accumulated[key].setdefault("sessions", []).append(session_id)
+            if category != "preferences" and accumulated[key].get("category") == "preferences":
+                accumulated[key]["category"] = category
+        else:
+            accumulated[key] = {
+                "fact": fact_text,
+                "category": category,
+                "sessions": [session_id],
+                "first_seen": datetime.now(timezone.utc).isoformat(),
+            }
+    return accumulated
+
+def merge_decisions(accumulated, new_decisions, session_id):
+    for dec_text in new_decisions:
+        key = re.sub(r'\s+', ' ', dec_text.lower().strip())[:80]
+        if key in accumulated:
+            if session_id not in accumulated[key].get("sessions", []):
+                accumulated[key].setdefault("sessions", []).append(session_id)
+        else:
+            accumulated[key] = {
+                "decision": dec_text,
+                "sessions": [session_id],
+                "first_seen": datetime.now(timezone.utc).isoformat(),
+            }
+    return accumulated
+
+
+# ── Main scan ────────────────────────────────────────────────────────────
+
+def scan(days_back=7):
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-    sessions = []
+    # Calculate date cutoff
+    cutoff = datetime.now(timezone.utc).timestamp() - (days_back * 86400)
+
+    # ── Phase 1: Collect session data (fast, no LLM) ─────────────────────
+    pending = []  # User sessions to summarize
+    cron_jobs = []  # Cron job sessions (separate from wiki)
+
+    # Initialize output structures (needed for incremental scan fallback)
+    sessions_out = []
     project_map = defaultdict(lambda: {"sessions": [], "description": "", "emoji": ""})
     daily_logs = defaultdict(list)
-    session_summaries = {}  # sid -> summary dict, for dialectic cross-referencing
 
     cur = conn.execute(
-        """SELECT id, title, source, started_at, ended_at, message_count, 
-                  tool_call_count, input_tokens, output_tokens
-           FROM sessions 
-           ORDER BY started_at DESC"""
+        """SELECT id, title, source, started_at, ended_at,
+                  message_count, tool_call_count, input_tokens, output_tokens
+           FROM sessions WHERE started_at >= ?
+           ORDER BY started_at DESC""",
+        (cutoff,)
     )
 
     for row in cur:
@@ -398,97 +447,175 @@ def scan(summarize=False):
         source = row[2]
         started_at = row[3]
         date_str = ts_to_date(started_at)
-
         messages = get_session_messages(conn, sid)
 
-        # Skip cron sessions - they're automated noise
+        # Handle cron sessions separately
         if source == "cron":
+            cron_cat = classify_cron_job(title, " ".join(m["content"] for m in messages if m["role"] == "user"))
+            cron_jobs.append({
+                "id": sid,
+                "title": title,
+                "category": cron_cat,
+                "started_at": ts_to_dt(started_at),
+                "date": date_str,
+                "message_count": row[5] or 0,
+            })
             continue
 
-        # Skip sessions with too few messages (less than 3 = not meaningful)
         if len(messages) < 3:
             continue
-
-        # Skip sessions that are just the scanner running (dialectic pass outputs as user messages)
-        user_msg_texts_check = [m["content"] for m in messages if m["role"] == "user"]
-        if any("---PASS" in msg or "3 reasoning passes" in msg for msg in user_msg_texts_check):
+        user_msg_check = [m["content"] for m in messages if m["role"] == "user"]
+        if any("---PASS" in msg or "3 reasoning passes" in msg for msg in user_msg_check):
             continue
 
-        # Classify into project
         user_msg_texts = [m["content"] for m in messages if m["role"] == "user"]
         asst_msg_texts = [m["content"] for m in messages if m["role"] == "assistant"]
         project = classify_project(title, user_msg_texts, asst_msg_texts)
         project_name = project["name"] if project else "Other"
 
-        # Generate auto-title
-        auto_title = generate_auto_title(messages, title, project_name)
+        # Skip sessions that already have an LLM summary (incremental scan)
+        # Check using the existing sessions.json index to avoid reading all files
+        session_file = SESSIONS_DIR / f"{sid}.json"
+        if session_file.exists():
+            try:
+                existing = json.loads(session_file.read_text())
+                if existing.get("summary") and len(existing["summary"]) > 20 and existing.get("auto_title"):
+                    # Already summarized - reuse
+                    sessions_out.append({
+                        "id": sid, "title": existing.get("title", title),
+                        "auto_title": existing.get("auto_title"), "summary": existing.get("summary"),
+                        "project": existing.get("project", project_name), "source": source,
+                        "started_at": existing.get("started_at") or ts_to_dt(started_at),
+                        "ended_at": existing.get("ended_at") or ts_to_dt(row[4]),
+                        "date": existing.get("date") or date_str,
+                        "message_count": existing.get("message_count", row[5] or 0),
+                        "tool_call_count": existing.get("tool_call_count", row[6] or 0),
+                        "input_tokens": existing.get("input_tokens", row[7] or 0),
+                        "output_tokens": existing.get("output_tokens", row[8] or 0),
+                    })
+                    project_map[project_name]["sessions"].append(sid)
+                    if project:
+                        project_map[project_name]["description"] = project["description"]
+                        project_map[project_name]["emoji"] = project["emoji"]
+                    if date_str:
+                        daily_logs[date_str].append({
+                            "id": sid, "title": title, "auto_title": existing.get("auto_title"),
+                            "summary": existing.get("summary"), "project": project_name,
+                            "source": source, "message_count": row[5] or 0,
+                        })
+                    continue
+            except:
+                pass
 
-        # Generate dialectic summary (multi-pass LLM reasoning)
-        summary = None
-        dialectic = None
-        if summarize:
-            # Collect previous session summaries from the same project
-            prev_summaries = [
-                session_summaries[psid]
-                for psid in project_map[project_name]["sessions"]
-                if psid in session_summaries
-            ]
-            dialectic = generate_dialectic_summary(messages, title, project_name, prev_summaries)
-            summary = dialectic.get("context") or dialectic.get("pass1") or dialectic.get("narrative")
+        pending.append({
+            "sid": sid,
+            "title": title,
+            "source": source,
+            "started_at": started_at,
+            "date_str": date_str,
+            "row": row,
+            "messages": messages,
+            "project_name": project_name,
+            "project": project,
+        })
+
+    conn.close()
+
+    # ── Phase 2: LLM summarization in parallel ───────────────────────────
+    accumulated_facts = {}
+    accumulated_decisions = {}
+
+    def process_session(data):
+        """Process a single session: run LLM, return session data + facts + decisions."""
+        result = llm_summarize(data["messages"], data["title"], data["project_name"])
+        return {
+            "data": data,
+            "summary": result["summary"],
+            "auto_title": result["title"],
+            "facts": result["facts"],
+            "decisions": result["decisions"],
+        }
+
+    # Use ThreadPoolExecutor for parallel LLM calls
+    # Limit to 3 concurrent to avoid overwhelming the LLM
+    results = []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(process_session, p): p for p in pending}
+        for future in as_completed(futures):
+            try:
+                results.append(future.result())
+            except Exception as e:
+                p = futures[future]
+                print(f"  Warning: failed to summarize {p['sid']}: {e}")
+                results.append({
+                    "data": p,
+                    "summary": f"Error summarizing session.",
+                    "auto_title": p["title"],
+                    "facts": [],
+                    "decisions": [],
+                })
+
+    # ── Phase 3: Write output files ──────────────────────────────────────
+    project_map = defaultdict(lambda: {"sessions": [], "description": "", "emoji": ""})
+    daily_logs = defaultdict(list)
+
+    for r in results:
+        d = r["data"]
+        sid = d["sid"]
+        summary = r["summary"]
+        auto_title = r["auto_title"]
+        facts = r["facts"]
+        decisions_extracted = r["decisions"]
+
+        if facts:
+            merge_facts(accumulated_facts, facts, sid)
+        if decisions_extracted:
+            merge_decisions(accumulated_decisions, decisions_extracted, sid)
 
         session_data = {
             "id": sid,
-            "title": title,
+            "title": d["title"],
             "auto_title": auto_title,
             "summary": summary,
-            "dialectic": dialectic,
-            "project": project_name,
-            "source": source,
-            "started_at": ts_to_dt(started_at),
-            "ended_at": ts_to_dt(row[4]),
-            "date": date_str,
-            "message_count": row[5] or 0,
-            "tool_call_count": row[6] or 0,
-            "input_tokens": row[7] or 0,
-            "output_tokens": row[8] or 0,
-            "messages": messages,
+            "project": d["project_name"],
+            "source": d["source"],
+            "started_at": ts_to_dt(d["started_at"]),
+            "ended_at": ts_to_dt(d["row"][4]),
+            "date": d["date_str"],
+            "message_count": d["row"][5] or 0,
+            "tool_call_count": d["row"][6] or 0,
+            "input_tokens": d["row"][7] or 0,
+            "output_tokens": d["row"][8] or 0,
+            "messages": d["messages"],
         }
 
         with open(SESSIONS_DIR / f"{sid}.json", "w") as f:
             json.dump(session_data, f, indent=2, ensure_ascii=False)
 
-        sessions.append({k: v for k, v in session_data.items() if k != "messages"})
+        sessions_out.append({k: v for k, v in session_data.items() if k != "messages"})
 
-        # Store dialectic summary for cross-referencing in later sessions
-        if dialectic:
-            session_summaries[sid] = dialectic
+        project_map[d["project_name"]]["sessions"].append(sid)
+        if d["project"]:
+            project_map[d["project_name"]]["description"] = d["project"]["description"]
+            project_map[d["project_name"]]["emoji"] = d["project"]["emoji"]
 
-        # Build project map
-        project_map[project_name]["sessions"].append(sid)
-        if project:
-            project_map[project_name]["description"] = project["description"]
-            project_map[project_name]["emoji"] = project["emoji"]
-
-        # Build daily logs
-        if date_str:
-            daily_logs[date_str].append({
+        if d["date_str"]:
+            daily_logs[d["date_str"]].append({
                 "id": sid,
-                "title": title,
+                "title": d["title"],
                 "auto_title": auto_title,
                 "summary": summary,
-                "project": project_name,
-                "source": source,
-                "message_count": row[5] or 0,
+                "project": d["project_name"],
+                "source": d["source"],
+                "message_count": d["row"][5] or 0,
             })
-
-    conn.close()
 
     # Write sessions index
     with open(OUT_DIR / "sessions.json", "w") as f:
-        json.dump(sessions, f, indent=2, ensure_ascii=False)
+        json.dump(sessions_out, f, indent=2, ensure_ascii=False)
 
     # Write projects
-    projects = [
+    projects_out = [
         {
             "name": k,
             "emoji": v.get("emoji", "📁"),
@@ -498,38 +625,86 @@ def scan(summarize=False):
         }
         for k, v in project_map.items()
     ]
-    # Sort: projects with more sessions first, but put "Greetings" last
-    projects.sort(key=lambda x: (x["name"] == "Greetings & Casual", -x["session_count"]))
+    projects_out.sort(key=lambda x: (x["name"] == "Greetings & Casual", -x["session_count"]))
     with open(OUT_DIR / "projects.json", "w") as f:
-        json.dump(projects, f, indent=2, ensure_ascii=False)
+        json.dump(projects_out, f, indent=2, ensure_ascii=False)
 
     # Write daily logs
-    daily = [
+    daily_out = [
         {
             "date": k,
             "session_count": len(v),
             "sessions": v,
-            "projects": list(set(s["project"] for s in v)),
+            "projects": sorted(set(s["project"] for s in v)),
         }
         for k, v in daily_logs.items()
     ]
-    daily.sort(key=lambda x: x["date"], reverse=True)
+    daily_out.sort(key=lambda x: x["date"], reverse=True)
     with open(OUT_DIR / "daily_logs.json", "w") as f:
-        json.dump(daily, f, indent=2, ensure_ascii=False)
+        json.dump(daily_out, f, indent=2, ensure_ascii=False)
 
-    print(f"✅ Scanned {len(sessions)} sessions, {len(projects)} projects, {len(daily)} days")
-    if summarize:
-        print("   Narrative summaries and auto-titles generated")
-    print(f"   Output: {OUT_DIR}")
+    # Write facts
+    facts_list = []
+    for key, v in sorted(accumulated_facts.items()):
+        facts_list.append({
+            "id": f"fact_{len(facts_list) + 1:03d}",
+            "fact": v.get("fact", key),
+            "category": v.get("category", "preferences"),
+            "sessions": v.get("sessions", []),
+            "first_seen": v.get("first_seen"),
+            "status": "active",
+        })
+    with open(OUT_DIR / "facts.json", "w") as f:
+        json.dump({
+            "version": "1.0",
+            "generated": datetime.now(timezone.utc).isoformat(),
+            "facts": facts_list,
+        }, f, indent=2, ensure_ascii=False)
 
-    # Generate compact wiki index
-    try:
-        from generate_index import generate_index
-        generate_index()
-    except Exception as e:
-        print(f"   ⚠️  Wiki index generation failed: {e}")
+    # Write decisions
+    decisions_list = []
+    for key, v in sorted(accumulated_decisions.items()):
+        decisions_list.append({
+            "id": f"dec_{len(decisions_list) + 1:03d}",
+            "decision": v.get("decision", key),
+            "sessions": v.get("sessions", []),
+            "first_seen": v.get("first_seen"),
+            "status": "active",
+        })
+    with open(OUT_DIR / "decisions.json", "w") as f:
+        json.dump({
+            "version": "1.0",
+            "generated": datetime.now(timezone.utc).isoformat(),
+            "decisions": decisions_list,
+        }, f, indent=2, ensure_ascii=False)
+
+    # Write cron jobs
+    cron_jobs.sort(key=lambda x: x["started_at"] or "", reverse=True)
+    with open(OUT_DIR / "cron-jobs.json", "w") as f:
+        json.dump({
+            "version": "1.0",
+            "generated": datetime.now(timezone.utc).isoformat(),
+            "cron_jobs": cron_jobs,
+        }, f, indent=2, ensure_ascii=False)
+
+    print(f"Scanned {len(sessions_out)} sessions, {len(projects_out)} projects, {len(daily_out)} days")
+    print(f"Extracted {len(facts_list)} unique facts, {len(decisions_list)} unique decisions")
+    print(f"Cron jobs: {len(cron_jobs)}")
+
+    # Rebuild all index files from session data to ensure consistency
+    print("\nRebuilding index files...")
+    # Look for rebuild_data.py in the scanner's script directory
+    rebuild_script = Path(__file__).parent / "rebuild_data.py"
+    if rebuild_script.exists():
+        result = subprocess.run(
+            [sys.executable, str(rebuild_script)],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode == 0:
+            print("Index rebuild complete.")
+        else:
+            print(f"Index rebuild failed: {result.stderr}")
 
 
 if __name__ == "__main__":
-    do_summarize = "--summarize" in sys.argv
-    scan(summarize=do_summarize)
+    scan(days_back=7)

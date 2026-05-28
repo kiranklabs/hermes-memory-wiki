@@ -3,20 +3,27 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { DailyLog, Project } from "@/lib/data";
+import type { DailyLog, Project, CronJob } from "@/lib/data";
 import { formatQuickDate } from "@/lib/format";
+
+const CRON_CAT_LABELS: Record<string, string> = {
+  auto_scan: "Auto Scan",
+  backup: "Backup",
+  priority_check: "Priority Check",
+  other: "Other",
+};
 
 interface SidebarProps {
   dailyLogs: DailyLog[];
   projects: Project[];
+  cronJobs: CronJob[];
 }
 
-export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
+export default function Sidebar({ dailyLogs, projects, cronJobs }: SidebarProps) {
   const pathname = usePathname();
-  const [expandedDates, setExpandedDates] = useState<Set<string>>(
-    new Set(dailyLogs.slice(0, 2).map((d) => d.date))
-  );
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
+  const [expandedCron, setExpandedCron] = useState<Set<string>>(new Set());
 
   const toggleDate = (date: string) => {
     setExpandedDates((prev) => {
@@ -36,7 +43,15 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
     });
   };
 
-  // Cache session titles for quick lookup in project tree
+  const toggleCron = (cat: string) => {
+    setExpandedCron((prev) => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
   const sessionTitleCache: Record<string, string> = {};
   for (const log of dailyLogs) {
     for (const s of log.sessions) {
@@ -44,19 +59,23 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
     }
   }
 
+  // Group cron jobs by category
+  const cronByCat: Record<string, CronJob[]> = {};
+  for (const job of cronJobs) {
+    const cat = job.category || "other";
+    if (!cronByCat[cat]) cronByCat[cat] = [];
+    cronByCat[cat].push(job);
+  }
+
   return (
     <aside
       className="w-72 min-h-screen overflow-y-auto flex-shrink-0 border-r flex flex-col"
-      style={{
-        background: "var(--bg)",
-        borderColor: "var(--border)",
-      }}
+      style={{ background: "var(--bg)", borderColor: "var(--border)" }}
     >
-      {/* Logo */}
       <div className="px-5 py-5 border-b flex-shrink-0" style={{ borderColor: "var(--border)" }}>
         <Link href="/" className="flex items-center gap-2">
-          <span style={{ color: "var(--accent)" }} className="text-xl">⚡</span>
-          <span className="font-bold text-lg">Memory Wiki</span>
+          <span style={{ color: "var(--accent)" }} className="text-xl">{"⚡"}</span>
+          <span className="font-bold text-lg">Hermes Memory Wiki</span>
         </Link>
       </div>
 
@@ -70,10 +89,35 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
             color: pathname === "/" ? "var(--accent)" : "var(--text)",
           }}
         >
-          <span>🏠</span> Overview
+          <span>{"🏠"}</span> Overview
         </Link>
 
-        {/* Divider */}
+        <div className="my-3 border-t" style={{ borderColor: "var(--border)" }} />
+
+        {/* Facts */}
+        <Link
+          href="/facts"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          style={{
+            background: pathname === "/facts" ? "var(--accent-dim)" : "transparent",
+            color: pathname === "/facts" ? "var(--accent)" : "var(--text)",
+          }}
+        >
+          <span>{"📋"}</span> Facts
+        </Link>
+
+        {/* Decisions */}
+        <Link
+          href="/decisions"
+          className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+          style={{
+            background: pathname === "/decisions" ? "var(--accent-dim)" : "transparent",
+            color: pathname === "/decisions" ? "var(--accent)" : "var(--text)",
+          }}
+        >
+          <span>{"⚖️"}</span> Decisions
+        </Link>
+
         <div className="my-3 border-t" style={{ borderColor: "var(--border)" }} />
 
         {/* Projects Tree */}
@@ -82,7 +126,7 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
             className="text-xs font-semibold uppercase tracking-wider px-3 mb-2"
             style={{ color: "var(--text-muted)" }}
           >
-            📁 Projects
+            {"📁"} Projects
           </div>
           <div className="space-y-0.5">
             {projects.map((project) => {
@@ -105,16 +149,13 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
                         transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
                       }}
                     >
-                      ▶
+                      {"▶"}
                     </span>
                     <span className="text-base">{project.emoji}</span>
                     <span className="flex-1 truncate font-medium">{project.name}</span>
                     <span
                       className="text-xs px-1.5 py-0.5 rounded"
-                      style={{
-                        background: "var(--surface)",
-                        color: "var(--text-muted)",
-                      }}
+                      style={{ background: "var(--surface)", color: "var(--text-muted)" }}
                     >
                       {project.session_count}
                     </span>
@@ -156,16 +197,15 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
           </div>
         </div>
 
-        {/* Divider */}
         <div className="my-3 border-t" style={{ borderColor: "var(--border)" }} />
 
         {/* Daily Logs Tree */}
-        <div>
+        <div className="mb-4">
           <div
             className="text-xs font-semibold uppercase tracking-wider px-3 mb-2"
             style={{ color: "var(--text-muted)" }}
           >
-            📅 Timeline
+            {"📅"} Timeline
           </div>
           <div className="space-y-0.5">
             {dailyLogs.map((log) => {
@@ -188,15 +228,12 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
                         transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
                       }}
                     >
-                      ▶
+                      {"▶"}
                     </span>
                     <span className="flex-1 truncate font-medium">{formatQuickDate(log.date)}</span>
                     <span
                       className="text-xs px-1.5 py-0.5 rounded"
-                      style={{
-                        background: "var(--surface)",
-                        color: "var(--text-muted)",
-                      }}
+                      style={{ background: "var(--surface)", color: "var(--text-muted)" }}
                     >
                       {log.session_count}
                     </span>
@@ -224,6 +261,68 @@ export default function Sidebar({ dailyLogs, projects }: SidebarProps) {
                           </Link>
                         );
                       })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="my-3 border-t" style={{ borderColor: "var(--border)" }} />
+
+        {/* Cron Jobs — at the very bottom */}
+        <div>
+          <div
+            className="text-xs font-semibold uppercase tracking-wider px-3 mb-2"
+            style={{ color: "var(--text-muted)" }}
+          >
+            {"⚙️"} Cron Jobs
+          </div>
+          <div className="space-y-0.5">
+            {Object.entries(cronByCat).map(([cat, jobs]) => {
+              const isExpanded = expandedCron.has(cat);
+              return (
+                <div key={cat}>
+                  <button
+                    onClick={() => toggleCron(cat)}
+                    className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left"
+                    style={{ color: "var(--text)" }}
+                  >
+                    <span
+                      className="text-xs transition-transform"
+                      style={{
+                        color: "var(--text-muted)",
+                        transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                      }}
+                    >
+                      {"▶"}
+                    </span>
+                    <span className="flex-1 truncate font-medium">
+                      {CRON_CAT_LABELS[cat] || cat}
+                    </span>
+                    <span
+                      className="text-xs px-1.5 py-0.5 rounded"
+                      style={{ background: "var(--surface)", color: "var(--text-muted)" }}
+                    >
+                      {jobs.length}
+                    </span>
+                  </button>
+                  {isExpanded && (
+                    <div className="ml-5 pl-3 border-l space-y-0.5 mt-0.5" style={{ borderColor: "var(--border)" }}>
+                      {jobs.slice(0, 10).map((job) => (
+                        <div
+                          key={job.id}
+                          className="px-2 py-1.5 rounded text-xs truncate"
+                          style={{ color: "var(--text-muted)" }}
+                          title={job.title}
+                        >
+                          {job.title.length > 30 ? job.title.slice(0, 30) + "..." : job.title}
+                          <span className="ml-1 text-xs" style={{ color: "var(--text-muted)", opacity: 0.6 }}>
+                            {job.date || ""}
+                          </span>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

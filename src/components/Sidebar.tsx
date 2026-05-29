@@ -53,9 +53,11 @@ export default function Sidebar({ dailyLogs, projects, cronJobs }: SidebarProps)
   };
 
   const sessionTitleCache: Record<string, string> = {};
+  const sessionDateCache: Record<string, string> = {};
   for (const log of dailyLogs) {
     for (const s of log.sessions) {
       sessionTitleCache[s.id] = s.auto_title || s.title || "(untitled)";
+      sessionDateCache[s.id] = s.started_at || "";
     }
   }
 
@@ -162,7 +164,14 @@ export default function Sidebar({ dailyLogs, projects, cronJobs }: SidebarProps)
                   </button>
                   {isExpanded && (
                     <div className="ml-5 pl-3 border-l space-y-0.5 mt-0.5" style={{ borderColor: "var(--border)" }}>
-                      {project.sessions.slice(0, 10).map((sid) => {
+                      {[...project.sessions]
+                        .sort((a, b) => {
+                          const dateA = sessionDateCache[a] || "";
+                          const dateB = sessionDateCache[b] || "";
+                          return dateB.localeCompare(dateA);
+                        })
+                        .slice(0, 10)
+                        .map((sid) => {
                         const sessionTitle = sessionTitleCache[sid] || sid;
                         const isActiveSession = pathname === `/sessions/${sid}`;
                         return (
@@ -240,7 +249,13 @@ export default function Sidebar({ dailyLogs, projects, cronJobs }: SidebarProps)
                   </button>
                   {isExpanded && (
                     <div className="ml-5 pl-3 border-l space-y-0.5 mt-0.5" style={{ borderColor: "var(--border)" }}>
-                      {log.sessions.map((s) => {
+                      {[...log.sessions]
+                        .sort((a, b) => {
+                          const dateA = a.started_at || "";
+                          const dateB = b.started_at || "";
+                          return dateB.localeCompare(dateA);
+                        })
+                        .map((s) => {
                         const sessionTitle = s.auto_title || s.title || "(untitled)";
                         const isActiveSession = pathname === `/sessions/${s.id}`;
                         return (

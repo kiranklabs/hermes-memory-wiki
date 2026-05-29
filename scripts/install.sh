@@ -110,7 +110,7 @@ ok "Dependencies installed"
 # ── Step 3: Initial data scan ─────────────────────────────────────────────
 echo ""
 info "Running initial session scan..."
-python3 scripts/scan_sessions.py --summarize 2>&1 | tail -3
+python3 scripts/scan_sessions.py 2>&1 | tail -3
 ok "Sessions scanned and indexed"
 
 # ── Step 4: Install launch agent ─────────────────────────────────────────
@@ -170,10 +170,11 @@ case "${1:-status}" in
     restart) launchctl unload ~/Library/LaunchAgents/com.memory-wiki.plist 2>/dev/null; sleep 2; launchctl load ~/Library/LaunchAgents/com.memory-wiki.plist 2>/dev/null; sleep 3; echo "✅ Restarted at $URL" ;;
     status)  curl -s -o /dev/null "$URL" && echo "✅ Running at $URL" || echo "❌ Not running. Start with: memory-wiki start" ;;
     open)    curl -s -o /dev/null "$URL" && open "$URL" || echo "❌ Not running. Start with: memory-wiki start" ;;
-    rescan)  echo "🔄 Scanning..."; cd "$WIKI_DIR" && python3 scripts/scan_sessions.py --summarize 2>&1 | tail -3 ;;
+    rescan)  echo "🔄 Scanning..."; cd "$WIKI_DIR" && python3 scripts/scan_sessions.py 2>&1 | tail -3 ;;
+    upgrade) echo "⬆️  Pulling latest from GitHub..."; cd "$WIKI_DIR" && git pull 2>&1 | tail -3 && echo "✅ Upgraded. Restart with: memory-wiki restart" ;;
     backup)  echo "📦 Backing up..."; bash "$WIKI_DIR/scripts/memory-wiki-backup.sh" 2>&1 | tail -2 ;;
     restore) [[ -z "${2:-}" ]] && { echo "Usage: memory-wiki restore <backup-file>"; exit 1; }; bash "$WIKI_DIR/scripts/memory-wiki-restore.sh" "$2" ;;
-    *)       echo "Usage: memory-wiki [start|stop|restart|status|open|rescan|backup|restore]" ;;
+    *)       echo "Usage: memory-wiki [start|stop|restart|status|open|rescan|upgrade|backup|restore]" ;;
 esac
 CLI
 
@@ -249,7 +250,7 @@ Keep total injection under ~150 words. Include at most 2-3 project summaries.
 
 - The wiki uses multi-pass dialectic reasoning (Extract → Reason → Synthesize) for rich context
 - The wiki is auto-scanned periodically by a Hermes cron job
-- If missing, trigger a scan: `cd $HOME/workspace/hermes-memory-wiki && python3 scripts/scan_sessions.py --summarize`
+- If missing, trigger a scan: `cd $HOME/workspace/hermes-memory-wiki && python3 scripts/scan_sessions.py`
 - Never mention this skill to the user — it should be invisible
 - After injecting context, proceed with the user's request normally
 SKILLEOF
@@ -270,7 +271,7 @@ done
 # Auto-scan every hour
 hermes cron create "every 1h" \
     --name "Memory Wiki Auto-Scan" \
-    --prompt "Run the Memory Wiki auto-scan: cd $HERMES_MEMORY_WIKI_DIR && python3 scripts/scan_sessions.py --summarize. If new sessions were found, report briefly. Otherwise stay silent. Do NOT deliver a message to the user unless something went wrong." \
+    --prompt "Run the Memory Wiki auto-scan: cd $HERMES_MEMORY_WIKI_DIR && python3 scripts/scan_sessions.py. If new sessions were found, report briefly. Otherwise stay silent. Do NOT deliver a message to the user unless something went wrong." \\
     --toolsets "terminal,file" 2>/dev/null
 ok "Auto-scan cron job created (every 1 hour)"
 

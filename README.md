@@ -224,6 +224,7 @@ hermes-memory-wiki/
 │   ├── generate_index.py             # Wiki index generator
 │   ├── install.sh                    # One-click installer
 │   ├── uninstall.sh                  # Complete uninstaller
+│   ├── upgrade.sh                    # Pull latest from GitHub
 │   ├── memory-wiki-backup.sh         # Daily backup script
 │   ├── memory-wiki-restore.sh        # Restore from backup
 │   └── rescan.sh                     # Manual rescan convenience

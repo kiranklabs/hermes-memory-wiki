@@ -31,3 +31,6 @@ scripts/sync-public.sh
 # Facts and decisions (generated from session data)
 data/facts.json
 data/decisions.json
+
+# TypeScript build info
+tsconfig.tsbuildinfo
